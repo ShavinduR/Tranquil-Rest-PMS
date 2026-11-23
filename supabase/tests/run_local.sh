@@ -14,8 +14,12 @@ trap '$SUDO "$PGBIN/pg_ctl" -D "$DATA" stop -m fast >/dev/null; rm -rf "$DATA"' 
 PSQL="psql -h /tmp -p $PORT -U postgres -v ON_ERROR_STOP=1 -q"
 $PSQL -c "create database pms"
 $PSQL -d pms -f "$HERE/auth_stub.sql"
-for f in "$ROOT"/migrations/*.sql; do $PSQL -d pms -f "$f"; done
-$PSQL -d pms -f "$ROOT/seed.sql"
+if [ -n "${USE_SETUP_SQL:-}" ]; then
+  $PSQL -d pms -1 -f "$ROOT/setup.sql"   # single transaction, exactly as pasted in the SQL editor
+else
+  for f in "$ROOT"/migrations/*.sql; do $PSQL -d pms -f "$f"; done
+  $PSQL -d pms -f "$ROOT/seed.sql"
+fi
 $PSQL -d pms -o /dev/null -f "$HERE/tests.sql"
 $PSQL -d pms -o /dev/null -f "$HERE/tests_restore.sql"
 echo "ALL SQL TESTS PASSED"

@@ -20,18 +20,22 @@ Choose *Caretaker device* (PIN `1234`) or *Owner / Admin login*. Any email works
 ## Go live
 
 1. **Create a Supabase project** (region: Singapore `ap-southeast-1` is closest to Sri Lanka).
-2. **Run the SQL** in *SQL Editor*, in this order:
+2. **Run the SQL:** easiest is to paste **`supabase/setup.sql`** (all migrations + seed in one file) into *SQL Editor* and press *Run*.
+   It runs as one script; if anything fails, nothing is half-created. Or run the files one by one, in this order:
    - `supabase/migrations/20261123000001_init.sql`
    - `supabase/migrations/20261123000002_booking_rpcs.sql`
    - `supabase/migrations/20261123000003_backup_export.sql`
    - `supabase/migrations/20261123000004_restore_backup.sql`
    - `supabase/migrations/20261123000005_audit_staff.sql`
+   - `supabase/migrations/20261123000006_new_accounts_inactive.sql`
    - `supabase/seed.sql` (5 Non-AC rooms, default prices, food presets)
 
    Or with the Supabase CLI: `supabase link` then `supabase db push`.
-3. **Create the owner account** in *Authentication → Users → Add user* (tick *Auto confirm*):
+3a. **Turn off public sign-ups:** *Authentication → Sign In / Providers → Email* → untick **Allow new users to sign up**.
+   Staff accounts are created only by the owner from inside the app. (New accounts also start inactive as a second safeguard.)
+3b. **Create the owner account** in *Authentication → Users → Add user* (tick *Auto confirm*):
    - the owner (e.g. `owner@yourmail.com`), then in *SQL Editor*:
-     `update profiles set role = 'admin', display_name = 'Owner' where id = (select id from auth.users where email = 'owner@yourmail.com');`
+     `update profiles set role = 'admin', display_name = 'Owner', active = true where id = (select id from auth.users where email = 'owner@yourmail.com');`
    - caretakers are added later from the app: *Admin → Settings → Staff & PINs → Add staff member*.
 4. **Set environment variables** (`.env` locally, Vercel → Settings → Environment Variables):
    ```

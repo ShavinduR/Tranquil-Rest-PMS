@@ -4,10 +4,20 @@
 insert into auth.users (id, email, raw_user_meta_data) values
   ('00000000-0000-0000-0000-00000000000a', 'owner@example.com', '{"display_name":"Owner"}'),
   ('00000000-0000-0000-0000-00000000000c', 'caretaker@example.com', '{"display_name":"Sunil"}');
-update public.profiles set role = 'admin' where id = '00000000-0000-0000-0000-00000000000a';
 
 create or replace function pg_temp.assert(cond boolean, msg text) returns void language plpgsql as $$
 begin if not coalesce(cond, false) then raise exception 'ASSERTION FAILED: %', msg; end if; end $$;
+
+-- New accounts start with no access
+select pg_temp.assert((select count(*) = 2 from public.profiles where not active), 'new accounts start inactive');
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000c', false);
+select pg_temp.assert(not public.is_staff(), 'inactive account is not staff');
+select pg_temp.assert((select count(*) = 0 from public.rooms), 'inactive account sees no rooms');
+reset role;
+-- Owner activated as admin (README step), caretaker activated (as staff-admin does)
+update public.profiles set role = 'admin', active = true where id = '00000000-0000-0000-0000-00000000000a';
+update public.profiles set active = true where id = '00000000-0000-0000-0000-00000000000c';
 
 -- ---------- act as admin ----------
 set role authenticated;
