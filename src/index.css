@@ -1,0 +1,35 @@
+@import "tailwindcss";
+@import "@fontsource/noto-sans-sinhala/400.css";
+@import "@fontsource/noto-sans-sinhala/600.css";
+@import "@fontsource/noto-sans-sinhala/700.css";
+
+@theme {
+  --font-sans: "Noto Sans Sinhala", ui-sans-serif, system-ui, sans-serif;
+  /* Tranquil Rest brand green (#09714E = 700) replaces Tailwind's teal everywhere. */
+  --color-teal-50: #ebf7f1;
+  --color-teal-100: #cdebdc;
+  --color-teal-200: #9dd6bb;
+  --color-teal-300: #66bc95;
+  --color-teal-400: #339d72;
+  --color-teal-500: #13865e;
+  --color-teal-600: #0c7b55;
+  --color-teal-700: #09714e;
+  --color-teal-800: #075b3f;
+  --color-teal-900: #054632;
+  --color-teal-950: #032a1e;
+}
+
+html {
+  -webkit-tap-highlight-color: transparent;
+  text-size-adjust: 100%;
+}
+body {
+  @apply bg-slate-100 text-slate-900 antialiased;
+  font-family: var(--font-sans);
+}
+/* Sinhala glyphs need extra line height to avoid clipped vowel signs. */
+.si { line-height: 1.55; }
+button { touch-action: manipulation; }
+input[type="number"]::-webkit-inner-spin-button { display: none; }
+.tabular { font-variant-numeric: tabular-nums; }
+.safe-bottom { padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
