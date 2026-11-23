@@ -381,6 +381,20 @@ export const createDemoRepo = (): Repo => {
       throw new Error('Demo mode always uses PIN 1234');
     },
 
+    async createStaff(input) {
+      requireAdmin();
+      await delay();
+      const email = (input.email?.trim() || `${input.display_name.toLowerCase().replace(/[^a-z0-9]+/g, '.') || 'staff'}@demo`).toLowerCase();
+      const profile: Profile = { id: uuid(), role: input.role, display_name: input.display_name.trim(), active: true };
+      db.staff.push(profile);
+      audit('profiles', profile.id, 'insert', null, profile);
+      persist();
+      return { user_id: profile.id, email };
+    },
+    async resetStaffPassword() {
+      requireAdmin();
+      await delay();
+    },
     async rotateBackupKey() {
       requireAdmin();
       throw new Error('Backups need a live Supabase project (not available in demo mode)');

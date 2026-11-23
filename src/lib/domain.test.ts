@@ -182,3 +182,14 @@ describe('csv', () => {
     expect(toCsv(['a', 'b'], [['x,y', 'he said "hi"'], [null, 3]])).toBe('a,b\r\n"x,y","he said ""hi"""\r\n,3');
   });
 });
+
+describe('password generator', () => {
+  it('makes 3 groups of 4 unambiguous characters', async () => {
+    const { generatePassword } = await import('./password');
+    for (let i = 0; i < 50; i++) {
+      const p = generatePassword();
+      expect(p).toMatch(/^[a-hjkmnp-z2-9]{4}-[a-hjkmnp-z2-9]{4}-[a-hjkmnp-z2-9]{4}$/);
+    }
+    expect(new Set(Array.from({ length: 50 }, () => generatePassword())).size).toBe(50);
+  });
+});

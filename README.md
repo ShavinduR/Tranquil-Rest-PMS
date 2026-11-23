@@ -25,6 +25,7 @@ Choose *Caretaker device* (PIN `1234`) or *Owner / Admin login*. Any email works
    - `supabase/migrations/20261123000002_booking_rpcs.sql`
    - `supabase/migrations/20261123000003_backup_export.sql`
    - `supabase/migrations/20261123000004_restore_backup.sql`
+   - `supabase/migrations/20261123000005_audit_staff.sql`
    - `supabase/seed.sql` (5 Non-AC rooms, default prices, food presets)
 
    Or with the Supabase CLI: `supabase link` then `supabase db push`.
@@ -37,24 +38,43 @@ Choose *Caretaker device* (PIN `1234`) or *Owner / Admin login*. Any email works
    VITE_SUPABASE_URL=https://xxxx.supabase.co
    VITE_SUPABASE_ANON_KEY=eyJ...
    ```
-5. **Deploy to Vercel**: import the repo. Framework is Vite, build command `npm run build`, output folder `dist`. `vercel.json` already handles SPA routing and service-worker caching.
-6. **Set up the caretaker phone:** sign in as the owner → *Settings → Staff & PINs* → set the caretaker's PIN.
+5. **Deploy the `staff-admin` server function** (powers *Add staff member* / *Reset password*):
+   ```bash
+   npx supabase login
+   npx supabase link --project-ref YOUR-PROJECT-REF
+   npx supabase functions deploy staff-admin
+   ```
+   Or in the dashboard: *Edge Functions → Deploy a new function → Via editor*, name it `staff-admin`, and add both files from
+   `supabase/functions/staff-admin/` (`index.ts`, `handler.ts`). Supabase supplies the keys it needs automatically.
+6. **Deploy to Vercel**: import the repo. Framework is Vite, build command `npm run build`, output folder `dist`. `vercel.json` already handles SPA routing and service-worker caching.
+7. **Set up the caretaker phone:** sign in as the owner → *Settings → Staff & PINs* → set the caretaker's PIN.
    On the caretaker's phone, open the site → *Caretaker device* → sign in **once** with the caretaker account → *Add to Home screen*.
    From then on the caretaker only uses the PIN. The app re-locks on every launch and after 10 idle minutes.
 
-7. **Turn on nightly Google backups** (Sheet + Drive): see [`backup/README.md`](backup/README.md). Restoring is done from *Admin → Restore*, or with `npm run restore` (same README).
+8. **Turn on nightly Google backups** (Sheet + Drive): see [`backup/README.md`](backup/README.md). Restoring is done from *Admin → Restore*, or with `npm run restore` (same README).
 
 ## Managing staff accounts
 
+Everything is in *Admin → Settings → Staff & PINs*:
+
 | Task | How |
 |---|---|
-| Add a caretaker | Supabase → *Authentication → Users → Add user* (email + password, tick *Auto confirm*). They appear in *Admin → Settings → Staff & PINs* as a caretaker. |
-| Set or change a PIN | *Admin → Settings → Staff & PINs* → type 4 digits → key button. Works immediately, on every device. |
-| Rename / change role | Same card: edit the name, or switch Caretaker ↔ Admin. |
-| Sign a phone out (at the phone) | Lock it → on the PIN screen tap *මෙම දුරකථනයෙන් ඉවත් වන්න · Sign out this device* → confirm. The owner's email/password is needed to sign it in again. |
-| Lock someone out remotely (lost phone, staff left) | Untick *Active* in Staff & PINs. Their phone signs out within ~2 minutes (or as soon as it reconnects), and the database refuses all their requests immediately. |
-| Change a password / delete for good | Supabase → *Authentication → Users* → the user's ⋯ menu. Deactivating is usually enough and keeps their history intact. |
+| Add a caretaker or admin | **Add staff member** → name, role, 4-digit PIN (caretakers). A password is generated, and a login email is created from the name unless you tick *Use their own email*. The sign-in details are shown **once**: copy them or write them down. |
+| Sign a new caretaker's phone in | On their phone: open the app → *Caretaker device* → enter the email and password once. From then on they only use the PIN. |
+| Forgotten password | **Reset password** on that person → a new password is shown once. The PIN is unchanged. |
+| Set or change a PIN | Type 4 digits → key button. Works immediately on every device. |
+| Rename / change role | Edit the name, or switch Caretaker ↔ Admin. |
+| Sign a phone out (at the phone) | Lock it → on the PIN screen tap *මෙම දුරකථනයෙන් ඉවත් වන්න · Sign out this device* → confirm. |
+| Lock someone out remotely (lost phone, staff left) | Untick **Active**. Their phone signs out within ~2 minutes (or as soon as it reconnects), and the database refuses their requests immediately. Their history is kept. |
+| Delete a login for good | Supabase → *Authentication → Users*. Deactivating is usually better because it keeps their name on past records. |
 | Owner signing out | Admin sidebar → sign-out icon (top). |
+
+Every staff change (added, renamed, role, active, PIN changed) appears in the **Audit log**. The PIN itself is never stored there.
+
+**How Add staff member stays safe:** creating logins needs Supabase's service-role key, which must never be in the app.
+So the `staff-admin` server function holds it, first checks that the caller is an active admin, and only then
+creates the login. Name, role and PIN are written with the admin's own permissions (normal database rules apply), and a
+half-created login is deleted if any step fails.
 
 ## How the business rules are enforced
 
@@ -81,7 +101,7 @@ Choose *Caretaker device* (PIN `1234`) or *Owner / Admin login*. Any email works
 ## Development
 
 ```bash
-npm test            # domain unit tests (time, pricing, conflicts, finance, WhatsApp, CSV)
+npm test            # unit tests: domain logic (time, pricing, conflicts, finance, WhatsApp, CSV) + staff-admin function
 npm run test:sql    # applies migrations to a throwaway local Postgres and tests RLS/constraints/triggers
 npm run typecheck
 npm run build

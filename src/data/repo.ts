@@ -18,6 +18,15 @@ export type BackupFile = {
 
 export type RestoreMode = 'merge' | 'replace';
 
+export type NewStaff = {
+  display_name: string;
+  role: 'admin' | 'caretaker';
+  /** Optional: a login email is generated from the name when empty. */
+  email: string | null;
+  password: string;
+  pin: string | null;
+};
+
 export type RestoreReport = {
   mode: RestoreMode;
   dry_run: boolean;
@@ -109,6 +118,9 @@ export type Repo = {
   listStaff(): Promise<Profile[]>;
   updateStaff(id: string, patch: Partial<Pick<Profile, 'role' | 'display_name' | 'active'>>): Promise<void>;
   setStaffPin(id: string, pin: string): Promise<void>;
+  /** Creates a login + profile (+ PIN for caretakers). Returns the login email. */
+  createStaff(input: NewStaff): Promise<{ user_id: string; email: string }>;
+  resetStaffPassword(id: string, password: string): Promise<void>;
   /** Creates/rotates the read-only key used by the Google Sheets backup. Returned once. */
   rotateBackupKey(): Promise<string>;
   backupKeyStatus(): Promise<{ created_at: string; last_used: string | null } | null>;

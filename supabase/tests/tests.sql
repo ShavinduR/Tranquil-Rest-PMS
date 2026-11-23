@@ -13,6 +13,12 @@ begin if not coalesce(cond, false) then raise exception 'ASSERTION FAILED: %', m
 set role authenticated;
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000a', false);
 select public.set_staff_pin('00000000-0000-0000-0000-00000000000c', '4826');
+select pg_temp.assert((select count(*) = 1 from public.audit_logs where table_name = 'profiles' and (new_data ->> 'pin_changed')::boolean), 'PIN change audited');
+select pg_temp.assert(not exists (select 1 from public.audit_logs where old_data::text like '%pin_hash%' or new_data::text like '%pin_hash%' or old_data::text like '%$2a$%' or new_data::text like '%$2a$%'), 'PIN hash never in audit log');
+update public.profiles set display_name = 'Sunil P' where id = '00000000-0000-0000-0000-00000000000c';
+select pg_temp.assert((select old_data ->> 'display_name' = 'Sunil' and new_data ->> 'display_name' = 'Sunil P' and actor_name = 'Owner'
+  from public.audit_logs where table_name = 'profiles' and action = 'update' order by id desc limit 1), 'rename audited with actor');
+update public.profiles set display_name = 'Sunil' where id = '00000000-0000-0000-0000-00000000000c';
 select pg_temp.assert((select count(*) = 5 from public.rooms), 'admin sees 5 rooms');
 insert into public.expenses (expense_type, category, amount, expense_date) values ('fixed', 'CEB Electricity', 8500, '2026-11-01');
 update public.settings set property_phone = '0770000001' where id = 1;  -- must not break the audit trigger

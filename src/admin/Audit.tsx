@@ -5,7 +5,7 @@ import { Spinner, cx } from '../components/ui';
 import { Btn, Card, PageHeader, fmtDateTime, inputCls } from './common';
 
 const PAGE = 50;
-const TABLES = ['bookings', 'payments', 'booking_addons', 'expenses', 'rooms', 'pricing_rules', 'settings', 'addon_presets'];
+const TABLES = ['bookings', 'payments', 'booking_addons', 'expenses', 'profiles', 'rooms', 'pricing_rules', 'settings', 'addon_presets'];
 const IGNORED = new Set(['updated_at', 'updated_by', 'created_at']);
 
 const actionCls: Record<string, string> = {
@@ -31,6 +31,7 @@ const describe = (log: AuditLog): string => {
   if (log.table_name === 'expenses') return `${show(d.category)} LKR ${show(d.amount)}`;
   if (log.table_name === 'pricing_rules') return `${show(d.category)} ${show(d.booking_type)}`;
   if (log.table_name === 'rooms') return show(d.name);
+  if (log.table_name === 'profiles') return `${show(d.display_name)} (${show(d.role)})${d.pin_changed === true ? ' · PIN changed' : ''}`;
   return '';
 };
 
@@ -55,7 +56,7 @@ export const AuditPage = () => {
       <PageHeader title="Audit log">
         <select className={cx(inputCls, 'w-auto')} value={table} onChange={(e) => setTable(e.target.value)}>
           <option value="">All records</option>
-          {TABLES.map((t) => <option key={t} value={t}>{t.replace('_', ' ')}</option>)}
+          {TABLES.map((t) => <option key={t} value={t}>{t === 'profiles' ? 'staff' : t.replace('_', ' ')}</option>)}
         </select>
       </PageHeader>
       <Card>
@@ -67,7 +68,7 @@ export const AuditPage = () => {
                   <span className="tabular text-slate-500">{fmtDateTime(l.created_at)}</span>
                   <span className="font-medium">{l.actor_name ?? 'system'}</span>
                   <span className={cx('rounded-full px-2 py-0.5 text-xs font-medium', actionCls[l.action] ?? 'bg-slate-100')}>{l.action.replace('_', ' ')}</span>
-                  <span className="text-slate-500">{l.table_name.replace('_', ' ')}</span>
+                  <span className="text-slate-500">{l.table_name === 'profiles' ? 'staff' : l.table_name.replace('_', ' ')}</span>
                   <span className="si text-slate-800">{describe(l)}</span>
                 </div>
                 {changes(l).length > 0 && (

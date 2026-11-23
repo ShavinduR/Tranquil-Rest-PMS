@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Save, Plus, KeyRound, CloudUpload, Copy, ExternalLink } from 'lucide-react';
+import { Save, Plus, KeyRound, CloudUpload, Copy, ExternalLink, UserPlus, RotateCcwKey, RefreshCw, X } from 'lucide-react';
 import { repo, isDemo } from '../data';
 import { useAppData } from '../data/AppData';
 import type { AddonPreset, PricingRule, Profile, Room, RoomCategory } from '../types';
 import { BOOKING_TYPES } from '../types';
-import { cx } from '../components/ui';
+import { Dialog, cx } from '../components/ui';
+import { generatePassword } from '../lib/password';
 import { Btn, Card, PageHeader, TYPE_EN, inputCls } from './common';
 
 const CAT_EN: Record<RoomCategory, string> = { non_ac: 'Non-AC', ac: 'AC' };
@@ -154,6 +155,8 @@ const PresetRow = ({ preset, onSave }: { preset: AddonPreset; onSave: (p: AddonP
 const StaffCard = ({ onToast }: { onToast: (m: string) => void }) => {
   const [staff, setStaff] = useState<Profile[]>([]);
   const [pins, setPins] = useState<Record<string, string>>({});
+  const [adding, setAdding] = useState(false);
+  const [resetting, setResetting] = useState<Profile | null>(null);
   const load = () => void repo.listStaff().then(setStaff).catch(() => undefined);
   useEffect(load, []);
 
@@ -173,15 +176,14 @@ const StaffCard = ({ onToast }: { onToast: (m: string) => void }) => {
   };
 
   return (
-    <Card title="Staff & PINs">
+    <Card title="Staff & PINs" action={<Btn tone="primary" onClick={() => setAdding(true)}><UserPlus className="size-4" /> Add staff member</Btn>}>
       <p className="mb-3 text-sm text-slate-500">
-        Create staff logins in Supabase → Authentication → Users. They appear here as caretakers; set a 4-digit PIN, then sign in once on the caretaker&apos;s phone.
-        {' '}Untick <b>Active</b> to lock someone out: their phone signs out within about 2 minutes and cannot load any data.
+        Untick <b>Active</b> to lock someone out: their phone signs out within about 2 minutes and cannot load any data. Their past records are kept.
         {isDemo && ' (Demo: PIN is always 1234.)'}
       </p>
       <div className="space-y-2">
         {staff.map((s) => (
-          <div key={s.id} className="grid grid-cols-2 items-center gap-2 text-sm md:grid-cols-[1fr_9rem_6rem_10rem]">
+          <div key={s.id} className={cx('grid grid-cols-2 items-center gap-2 text-sm md:grid-cols-[1fr_9rem_6rem_10rem_auto]', !s.active && 'opacity-60')}>
             <input aria-label="Display name" className={inputCls} defaultValue={s.display_name}
               onBlur={(e) => e.target.value !== s.display_name && void repo.updateStaff(s.id, { display_name: e.target.value }).then(load)} />
             <select aria-label="Role" className={inputCls} value={s.role} onChange={(e) => void repo.updateStaff(s.id, { role: e.target.value as Profile['role'] }).then(load)}>
@@ -197,10 +199,167 @@ const StaffCard = ({ onToast }: { onToast: (m: string) => void }) => {
                 <Btn onClick={() => void setPin(s.id)}><KeyRound className="size-4" /></Btn>
               </div>
             ) : <span />}
+            <Btn onClick={() => setResetting(s)}><RotateCcwKey className="size-4" /> Reset password</Btn>
           </div>
         ))}
       </div>
+      {adding && <AddStaffDialog onClose={() => setAdding(false)} onCreated={load} />}
+      {resetting && <ResetPasswordDialog person={resetting} onClose={() => setResetting(null)} />}
     </Card>
+  );
+};
+
+/** Shown once after creating a login or resetting a password. */
+const Credentials = ({ name, email, password, isCaretaker }: { name: string; email?: string; password: string; isCaretaker: boolean }) => {
+  const text = `Tranquil Rest sign-in for ${name}${email ? `\nEmail: ${email}` : ''}\nPassword: ${password}`;
+  return (
+    <div className="rounded-xl border-2 border-amber-300 bg-amber-50 p-4 text-sm">
+      <p className="mb-2 font-semibold">Write these down or copy them now. The password is shown only once.</p>
+      <dl className="grid grid-cols-[5rem_1fr] gap-y-1">
+        {email && (<><dt className="text-slate-500">Email</dt><dd className="font-mono break-all">{email}</dd></>)}
+        <dt className="text-slate-500">Password</dt><dd className="font-mono text-base font-semibold">{password}</dd>
+      </dl>
+      <div className="mt-3"><Btn onClick={() => void navigator.clipboard.writeText(text)}><Copy className="size-4" /> Copy</Btn></div>
+      {isCaretaker && (
+        <p className="mt-3 text-slate-700">
+          <b>Next:</b> on {name}&apos;s phone open the app → <i>Caretaker device</i> → sign in with these details once.
+          After that they only use their 4-digit PIN.
+        </p>
+      )}
+    </div>
+  );
+};
+
+const AddStaffDialog = ({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) => {
+  const [name, setName] = useState('');
+  const [role, setRole] = useState<Profile['role']>('caretaker');
+  const [pin, setPin] = useState('');
+  const [ownEmail, setOwnEmail] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState(() => generatePassword());
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState<{ email: string } | null>(null);
+
+  const valid = name.trim().length > 0 && password.length >= 8 && (role === 'admin' || /^\d{4}$/.test(pin)) && (!ownEmail || /\S+@\S+\.\S+/.test(email));
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!valid) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await repo.createStaff({
+        display_name: name.trim(), role, password,
+        email: ownEmail ? email.trim() : null,
+        pin: role === 'caretaker' ? pin : null,
+      });
+      setDone({ email: r.email });
+      onCreated();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not create the account');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Dialog open onClose={onClose} labelledBy="add-staff-title">
+      <div className="mb-3 flex items-center justify-between">
+        <h2 id="add-staff-title" className="text-xl font-bold">{done ? 'Staff member added' : 'Add staff member'}</h2>
+        <button type="button" onClick={onClose} aria-label="Close" className="rounded-lg p-2 hover:bg-slate-100"><X className="size-5" /></button>
+      </div>
+      {done ? (
+        <div className="space-y-3">
+          <p className="text-sm"><b>{name.trim()}</b> can now sign in as {role === 'admin' ? 'an admin' : 'a caretaker'}{role === 'caretaker' ? ` with PIN ${pin}` : ''}.</p>
+          <Credentials name={name.trim()} email={done.email} password={password} isCaretaker={role === 'caretaker'} />
+          <Btn tone="primary" onClick={onClose}>Done</Btn>
+        </div>
+      ) : (
+        <form onSubmit={(e) => void submit(e)} className="space-y-3 text-sm">
+          <label className="block">Name<input className={inputCls} value={name} onChange={(e) => setName(e.target.value.slice(0, 60))} autoFocus placeholder="e.g. Sunil" /></label>
+          <div>
+            <span className="mb-1 block">Role</span>
+            <div className="flex rounded-xl border border-slate-300 p-1">
+              {(['caretaker', 'admin'] as const).map((r) => (
+                <button key={r} type="button" onClick={() => setRole(r)}
+                  className={cx('flex-1 rounded-lg py-2 font-semibold', role === r ? 'bg-teal-700 text-white' : 'text-slate-600')}>
+                  {r === 'caretaker' ? 'Caretaker' : 'Admin (full access)'}
+                </button>
+              ))}
+            </div>
+          </div>
+          {role === 'caretaker' && (
+            <label className="block">4-digit PIN (used every day on the phone)
+              <input className={inputCls} inputMode="numeric" maxLength={4} value={pin} placeholder="e.g. 4826"
+                onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))} />
+            </label>
+          )}
+          <label className="block">Password (needed once, to sign a phone in)
+            <div className="flex gap-1">
+              <input className={cx(inputCls, 'font-mono')} value={password} onChange={(e) => setPassword(e.target.value)} />
+              <Btn onClick={() => setPassword(generatePassword())}><RefreshCw className="size-4" /> New</Btn>
+            </div>
+            {password.length < 8 && <span className="text-xs text-red-700">At least 8 characters.</span>}
+          </label>
+          <label className="flex items-center gap-2">
+            <input type="checkbox" checked={ownEmail} onChange={(e) => setOwnEmail(e.target.checked)} />
+            Use their own email address for the login
+          </label>
+          {ownEmail ? (
+            <input className={inputCls} type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@gmail.com" />
+          ) : (
+            <p className="text-xs text-slate-500">A login email is created from the name automatically (no email is sent). You&apos;ll see it after saving.</p>
+          )}
+          {error && <p role="alert" className="rounded-xl bg-red-50 p-2 text-red-800">{error}</p>}
+          <div className="flex justify-end gap-2 pt-1">
+            <Btn onClick={onClose}>Cancel</Btn>
+            <Btn type="submit" tone="primary" disabled={!valid || busy}><UserPlus className="size-4" /> {busy ? 'Creating…' : 'Create account'}</Btn>
+          </div>
+        </form>
+      )}
+    </Dialog>
+  );
+};
+
+const ResetPasswordDialog = ({ person, onClose }: { person: Profile; onClose: () => void }) => {
+  const [password] = useState(() => generatePassword());
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+
+  const reset = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await repo.resetStaffPassword(person.id, password);
+      setDone(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not reset the password');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Dialog open onClose={onClose} labelledBy="reset-title">
+      <h2 id="reset-title" className="mb-2 text-xl font-bold">Reset password · {person.display_name}</h2>
+      {done ? (
+        <div className="space-y-3">
+          <Credentials name={person.display_name} password={password} isCaretaker={person.role === 'caretaker'} />
+          <Btn tone="primary" onClick={onClose}>Done</Btn>
+        </div>
+      ) : (
+        <div className="space-y-3 text-sm">
+          <p>A new password is created and the old one stops working. The PIN doesn&apos;t change. To force a phone out straight away, untick <b>Active</b> instead.</p>
+          {error && <p role="alert" className="rounded-xl bg-red-50 p-2 text-red-800">{error}</p>}
+          <div className="flex justify-end gap-2">
+            <Btn onClick={onClose}>Cancel</Btn>
+            <Btn tone="primary" onClick={() => void reset()} disabled={busy}><RotateCcwKey className="size-4" /> {busy ? 'Resetting…' : 'Create new password'}</Btn>
+          </div>
+        </div>
+      )}
+    </Dialog>
   );
 };
 

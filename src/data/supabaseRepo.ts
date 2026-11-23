@@ -45,6 +45,25 @@ export const createSupabaseRepo = (url: string, anonKey: string): Repo => {
     auth: { persistSession: true, autoRefreshToken: true, storageKey: 'tr-auth' },
   });
 
+  /** Calls the staff-admin Edge Function and surfaces its error message. */
+  const invokeStaffAdmin = async <T,>(body: Record<string, unknown>): Promise<T> => {
+    const { data, error } = await db.functions.invoke('staff-admin', { body });
+    if (error) {
+      const ctx = (error as { context?: unknown }).context;
+      if (ctx instanceof Response) {
+        const payload = (await ctx.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(payload?.error ?? `Server error (${ctx.status})`);
+      }
+      if (isNetworkFailure(error)) throw new NetworkError(error);
+      throw new Error(
+        /not found|404/i.test(error.message)
+          ? 'The staff-admin server function is not deployed yet (see README → Managing staff accounts).'
+          : error.message,
+      );
+    }
+    return data as T;
+  };
+
   const uid = async (): Promise<string> => {
     const { data } = await db.auth.getSession();
     const id = data.session?.user.id;
@@ -221,6 +240,12 @@ export const createSupabaseRepo = (url: string, anonKey: string): Repo => {
       must(await db.rpc('set_staff_pin', { p_user_id: id, p_pin: pin }));
     },
 
+    async createStaff(input) {
+      return await invokeStaffAdmin<{ user_id: string; email: string }>({ action: 'create', ...input });
+    },
+    async resetStaffPassword(id, password) {
+      await invokeStaffAdmin({ action: 'reset_password', user_id: id, password });
+    },
     async rotateBackupKey() {
       return must(await db.rpc('rotate_backup_key')) as string;
     },
