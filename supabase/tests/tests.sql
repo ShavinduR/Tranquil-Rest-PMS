@@ -15,6 +15,8 @@ select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000a
 select public.set_staff_pin('00000000-0000-0000-0000-00000000000c', '4826');
 select pg_temp.assert((select count(*) = 5 from public.rooms), 'admin sees 5 rooms');
 insert into public.expenses (expense_type, category, amount, expense_date) values ('fixed', 'CEB Electricity', 8500, '2026-11-01');
+update public.settings set property_phone = '0770000001' where id = 1;  -- must not break the audit trigger
+update public.settings set property_phone = null where id = 1;
 
 -- ---------- act as caretaker ----------
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000c', false);

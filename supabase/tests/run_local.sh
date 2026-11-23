@@ -17,6 +17,7 @@ $PSQL -d pms -f "$HERE/auth_stub.sql"
 for f in "$ROOT"/migrations/*.sql; do $PSQL -d pms -f "$f"; done
 $PSQL -d pms -f "$ROOT/seed.sql"
 $PSQL -d pms -o /dev/null -f "$HERE/tests.sql"
+$PSQL -d pms -o /dev/null -f "$HERE/tests_restore.sql"
 echo "ALL SQL TESTS PASSED"
 if [ -n "${DUMP_EXPORT:-}" ]; then
   $PSQL -d pms -At > "$DUMP_EXPORT" <<'SQL'
@@ -28,4 +29,7 @@ set role anon;
 select public.export_backup(:'k');
 SQL
   echo "export written to $DUMP_EXPORT"
+fi
+if [ -n "${AFTER_HOOK:-}" ]; then
+  PG_PSQL="$PSQL -d pms" bash -c "$AFTER_HOOK"
 fi

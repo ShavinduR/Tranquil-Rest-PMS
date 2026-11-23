@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, BedDouble, Receipt, Settings, History, LogOut, Smartphone } from 'lucide-react';
+import { LayoutDashboard, BedDouble, Receipt, Settings, History, LogOut, Smartphone, ArchiveRestore } from 'lucide-react';
 import { useAuth } from '../auth/AuthContext';
 import { useAppData } from '../data/AppData';
 import { OfflineBanner, cx } from '../components/ui';
@@ -11,6 +11,7 @@ const NAV = [
   { to: '/admin/expenses', label: 'Expenses', icon: Receipt },
   { to: '/admin/settings', label: 'Settings', icon: Settings },
   { to: '/admin/audit', label: 'Audit log', icon: History },
+  { to: '/admin/restore', label: 'Restore', icon: ArchiveRestore },
 ];
 
 export const AdminLayout = () => {

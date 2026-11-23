@@ -5,6 +5,43 @@ import type {
 
 export type Session = { userId: string; email: string | null };
 
+export const BACKUP_FORMAT = 'tranquil-rest-backup/1';
+export const BACKUP_TABLES = ['rooms', 'pricing_rules', 'addon_presets', 'expenses', 'bookings', 'payments', 'booking_addons', 'audit_logs'] as const;
+export type BackupTable = (typeof BACKUP_TABLES)[number];
+
+export type BackupFile = {
+  format: typeof BACKUP_FORMAT;
+  exported_at: string;
+  settings: Record<string, unknown> | null;
+  profiles: { id: string; role: string; display_name: string; active: boolean }[];
+} & Record<BackupTable, Record<string, unknown>[]>;
+
+export type RestoreMode = 'merge' | 'replace';
+
+export type RestoreReport = {
+  mode: RestoreMode;
+  dry_run: boolean;
+  backup_exported_at: string;
+  tables: Partial<Record<BackupTable | 'settings', { restored: number; skipped: number }>>;
+  missing_users: { id: string; display_name: string; role: string }[];
+};
+
+/** Validates an uploaded file before it is sent anywhere. */
+export const parseBackupFile = (text: string): BackupFile => {
+  let data: unknown;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error('This file is not valid JSON.');
+  }
+  const d = data as Partial<BackupFile> | null;
+  if (!d || d.format !== BACKUP_FORMAT) throw new Error('This is not a Tranquil Rest backup file.');
+  for (const t of BACKUP_TABLES) {
+    if (!Array.isArray(d[t])) throw new Error(`Backup file is incomplete (missing ${t}).`);
+  }
+  return d as BackupFile;
+};
+
 export type BookingPatch = Partial<
   Pick<Booking, 'guest_name' | 'guest_phone' | 'check_in_time' | 'check_out_time' | 'room_charge' | 'room_id' | 'notes' | 'booking_type'>
 >;
@@ -75,6 +112,9 @@ export type Repo = {
   /** Creates/rotates the read-only key used by the Google Sheets backup. Returned once. */
   rotateBackupKey(): Promise<string>;
   backupKeyStatus(): Promise<{ created_at: string; last_used: string | null } | null>;
+  /** Full snapshot in the same format as the nightly backup file. */
+  exportAll(): Promise<BackupFile>;
+  restoreBackup(file: BackupFile, mode: RestoreMode, dryRun: boolean, confirm?: string): Promise<RestoreReport>;
 
   /** Subscribe to remote changes (other devices). Returns unsubscribe. */
   subscribe(cb: () => void): () => void;

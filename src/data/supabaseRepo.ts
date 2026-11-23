@@ -2,7 +2,7 @@ import { createClient, type PostgrestError, type SupabaseClient } from '@supabas
 import type {
   AddonPreset, AuditLog, Booking, BookingAddon, Expense, Payment, PricingRule, Profile, Room, Settings, SlotIssue,
 } from '../types';
-import { NetworkError, SlotTakenError, type Repo, type Session } from './repo';
+import { NetworkError, SlotTakenError, type BackupFile, type Repo, type RestoreReport, type Session } from './repo';
 
 const BOOKING_SELECT = '*, payments(*), addons:booking_addons(*)';
 
@@ -227,6 +227,13 @@ export const createSupabaseRepo = (url: string, anonKey: string): Repo => {
     async backupKeyStatus() {
       const rows = must(await db.rpc('backup_key_status')) as { created_at: string; last_used: string | null }[];
       return rows[0] ?? null;
+    },
+
+    async exportAll() {
+      return must(await db.rpc('export_backup_admin')) as BackupFile;
+    },
+    async restoreBackup(file, mode, dryRun, confirm) {
+      return must(await db.rpc('restore_backup', { p_backup: file, p_mode: mode, p_dry_run: dryRun, p_confirm: confirm ?? null })) as RestoreReport;
     },
 
     subscribe(cb) {

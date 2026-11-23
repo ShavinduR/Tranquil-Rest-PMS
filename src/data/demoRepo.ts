@@ -8,7 +8,7 @@ import type {
 } from '../types';
 import { findSlotIssues, hasOverlap } from '../lib/conflicts';
 import { addMinutes, atClock, addDaysKey, dateKey, colomboParts } from '../lib/time';
-import { SlotTakenError, type Repo, type Session } from './repo';
+import { BACKUP_FORMAT, BACKUP_TABLES, SlotTakenError, type BackupFile, type BackupTable, type Repo, type RestoreReport, type Session } from './repo';
 
 type Db = {
   rooms: Room[];
@@ -387,6 +387,47 @@ export const createDemoRepo = (): Repo => {
     },
     async backupKeyStatus() {
       return null;
+    },
+
+    async exportAll() {
+      requireAdmin();
+      return {
+        format: BACKUP_FORMAT, exported_at: nowIso(), settings: { id: 1, ...db.settings },
+        profiles: db.staff.map(({ id, role, display_name, active }) => ({ id, role, display_name, active })),
+        rooms: db.rooms, pricing_rules: db.pricing, addon_presets: db.presets, expenses: db.expenses,
+        bookings: db.bookings, payments: db.payments, booking_addons: db.addons, audit_logs: db.audit,
+      } as unknown as BackupFile;
+    },
+    async restoreBackup(file, mode, dryRun, confirm) {
+      requireAdmin();
+      await delay();
+      if (mode === 'replace' && !dryRun && confirm !== 'REPLACE ALL DATA') throw new Error('Replace needs the confirmation text REPLACE ALL DATA');
+      const keys: Record<BackupTable, keyof Db> = {
+        rooms: 'rooms', pricing_rules: 'pricing', addon_presets: 'presets', expenses: 'expenses',
+        bookings: 'bookings', payments: 'payments', booking_addons: 'addons', audit_logs: 'audit',
+      };
+      const next: Db = structuredClone(db);
+      const tables: RestoreReport['tables'] = {};
+      for (const t of BACKUP_TABLES) {
+        const rows = file[t] as { id: string | number }[];
+        const current = next[keys[t]] as unknown as { id: string | number }[];
+        if (mode === 'replace') {
+          (next[keys[t]] as unknown) = rows;
+          tables[t] = { restored: rows.length, skipped: 0 };
+        } else {
+          const have = new Set(current.map((r) => r.id));
+          const add = rows.filter((r) => !have.has(r.id));
+          (next[keys[t]] as unknown) = [...current, ...add];
+          tables[t] = { restored: add.length, skipped: rows.length - add.length };
+        }
+      }
+      const report: RestoreReport = { mode, dry_run: dryRun, backup_exported_at: file.exported_at, tables, missing_users: [] };
+      if (!dryRun) {
+        db = next;
+        audit('backup', null, `restore_${mode}`, null, report);
+        persist();
+      }
+      return report;
     },
 
     subscribe(cb) {

@@ -24,6 +24,7 @@ Choose *Caretaker device* (PIN `1234`) or *Owner / Admin login*. Any email works
    - `supabase/migrations/20261123000001_init.sql`
    - `supabase/migrations/20261123000002_booking_rpcs.sql`
    - `supabase/migrations/20261123000003_backup_export.sql`
+   - `supabase/migrations/20261123000004_restore_backup.sql`
    - `supabase/seed.sql` (5 Non-AC rooms, default prices, food presets)
 
    Or with the Supabase CLI: `supabase link` then `supabase db push`.
@@ -41,7 +42,7 @@ Choose *Caretaker device* (PIN `1234`) or *Owner / Admin login*. Any email works
    On the caretaker's phone, open the site → *Caretaker device* → sign in **once** with the caretaker account → *Add to Home screen*.
    From then on the caretaker only uses the PIN. The app re-locks on every launch and after 10 idle minutes.
 
-7. **Turn on nightly Google backups** (Sheet + Drive): see [`backup/README.md`](backup/README.md).
+7. **Turn on nightly Google backups** (Sheet + Drive): see [`backup/README.md`](backup/README.md). Restoring is done from *Admin → Restore*, or with `npm run restore` (same README).
 
 ## How the business rules are enforced
 

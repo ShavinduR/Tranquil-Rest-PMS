@@ -16,6 +16,7 @@ import { AdminBookings } from './admin/Bookings';
 import { Expenses } from './admin/Expenses';
 import { SettingsPage } from './admin/Settings';
 import { AuditPage } from './admin/Audit';
+import { RestorePage } from './admin/Restore';
 
 /** Signed-in gate. Caretakers must also pass the PIN lock; admin routes require the admin role. */
 const Protected = ({ adminOnly, children }: { adminOnly?: boolean; children: ReactNode }) => {
@@ -51,6 +52,7 @@ export const App = () => (
       <Route path="expenses" element={<Expenses />} />
       <Route path="settings" element={<SettingsPage />} />
       <Route path="audit" element={<AuditPage />} />
+      <Route path="restore" element={<RestorePage />} />
     </Route>
     <Route path="*" element={<Navigate to="/" replace />} />
   </Routes>
