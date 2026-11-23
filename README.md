@@ -29,10 +29,10 @@ Choose *Caretaker device* (PIN `1234`) or *Owner / Admin login*. Any email works
    - `supabase/seed.sql` (5 Non-AC rooms, default prices, food presets)
 
    Or with the Supabase CLI: `supabase link` then `supabase db push`.
-3. **Create the users** in *Authentication → Users → Add user*:
+3. **Create the owner account** in *Authentication → Users → Add user* (tick *Auto confirm*):
    - the owner (e.g. `owner@yourmail.com`), then in *SQL Editor*:
      `update profiles set role = 'admin', display_name = 'Owner' where id = (select id from auth.users where email = 'owner@yourmail.com');`
-   - one account per caretaker (e.g. `sunil@tranquilrest.lk`). New users are caretakers by default.
+   - caretakers are added later from the app: *Admin → Settings → Staff & PINs → Add staff member*.
 4. **Set environment variables** (`.env` locally, Vercel → Settings → Environment Variables):
    ```
    VITE_SUPABASE_URL=https://xxxx.supabase.co
@@ -47,7 +47,7 @@ Choose *Caretaker device* (PIN `1234`) or *Owner / Admin login*. Any email works
    Or in the dashboard: *Edge Functions → Deploy a new function → Via editor*, name it `staff-admin`, and add both files from
    `supabase/functions/staff-admin/` (`index.ts`, `handler.ts`). Supabase supplies the keys it needs automatically.
 6. **Deploy to Vercel**: import the repo. Framework is Vite, build command `npm run build`, output folder `dist`. `vercel.json` already handles SPA routing and service-worker caching.
-7. **Set up the caretaker phone:** sign in as the owner → *Settings → Staff & PINs* → set the caretaker's PIN.
+7. **Set up the caretaker phone:** sign in as the owner → *Settings → Staff & PINs* → **Add staff member** (name + PIN) → note the sign-in details shown.
    On the caretaker's phone, open the site → *Caretaker device* → sign in **once** with the caretaker account → *Add to Home screen*.
    From then on the caretaker only uses the PIN. The app re-locks on every launch and after 10 idle minutes.
 
