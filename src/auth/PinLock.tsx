@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Delete, Lock } from 'lucide-react';
+import { Delete } from 'lucide-react';
 import { useAuth } from './AuthContext';
 import { si } from '../i18n/si';
 import { isDemo } from '../data';
@@ -51,8 +51,8 @@ export const PinLock = () => {
   const name = state.status === 'signed_in' ? state.profile.display_name : '';
 
   return (
-    <div className="si flex min-h-dvh flex-col items-center justify-center bg-teal-800 p-6 text-white">
-      <Lock className="size-14" aria-hidden />
+    <div className="si flex min-h-dvh flex-col items-center justify-center bg-teal-700 p-6 text-white">
+      <img src="/logo-white.svg" alt="Tranquil Rest" className="h-24 w-auto" />
       <h1 className="mt-3 text-center text-2xl font-bold">{si.pin.title}</h1>
       {name && <p className="text-lg opacity-80">{name}</p>}
       {isDemo && <p className="mt-1 rounded-lg bg-white/15 px-3 text-base">Demo PIN: 1234</p>}

@@ -10,9 +10,9 @@ import { BigButton, ErrorNote } from '../components/ui';
 export const Welcome = () => {
   const navigate = useNavigate();
   return (
-    <div className="flex min-h-dvh flex-col justify-center gap-4 bg-gradient-to-b from-teal-800 to-teal-950 p-6">
+    <div className="flex min-h-dvh flex-col justify-center gap-4 bg-gradient-to-b from-teal-700 to-teal-950 p-6">
       <div className="mb-4 text-center text-white">
-        <img src="/favicon.svg" alt="" className="mx-auto size-20 rounded-3xl shadow-lg" />
+        <img src="/logo-white.svg" alt="" className="mx-auto h-32 w-auto" />
         <h1 className="mt-3 text-4xl font-extrabold">Tranquil Rest</h1>
         <p className="si text-lg opacity-80">අමුත්තන් නිවාසය · Guest House</p>
       </div>
@@ -63,6 +63,7 @@ export const LoginPage = () => {
         <button type="button" onClick={() => navigate('/')} className="flex items-center gap-1 text-slate-600">
           <ArrowLeft className="size-5" /> Back
         </button>
+        <img src="/logo.svg" alt="Tranquil Rest" className="mx-auto h-20 w-auto" />
         <h1 className="text-2xl font-bold">{as === 'admin' ? 'Owner / Admin login' : 'Set up caretaker device'}</h1>
         {as === 'caretaker' && (
           <p className="text-slate-600">

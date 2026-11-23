@@ -22,9 +22,12 @@ export const AdminLayout = () => {
     <div className="min-h-dvh bg-slate-50 md:flex">
       <aside className="border-b border-slate-200 bg-white md:sticky md:top-0 md:h-dvh md:w-60 md:shrink-0 md:border-r md:border-b-0">
         <div className="flex items-center justify-between gap-2 px-4 py-3 md:block">
-          <div>
+          <div className="flex items-center gap-2">
+            <img src="/logo.svg" alt="" className="h-10 w-auto" />
+            <div>
             <div className="text-lg font-bold text-teal-800">Tranquil Rest</div>
             <div className="text-xs text-slate-500">Admin · {state.status === 'signed_in' ? state.profile.display_name : ''}{isDemo ? ' · DEMO' : ''}</div>
+            </div>
           </div>
           <div className="flex gap-1 md:mt-3">
             <button type="button" onClick={() => navigate('/caretaker')} className="rounded-lg p-2 text-slate-600 hover:bg-slate-100" title="Caretaker view">

@@ -16,10 +16,13 @@ export const CaretakerLayout = () => {
   return (
     <div className="mx-auto min-h-dvh max-w-2xl bg-slate-100">
       {(!online || stale) && <OfflineBanner lastSync={lastSync} />}
-      <header className="si flex items-center gap-2 bg-teal-800 px-3 py-2 text-white">
-        <button type="button" onClick={() => navigate('/caretaker')} className="flex-1 text-left">
-          <div className="text-xl font-extrabold">{reference?.settings.property_name ?? si.appName}</div>
-          <div className="text-sm opacity-85">{fullDateSi(now)}</div>
+      <header className="si flex items-center gap-2 bg-teal-700 px-3 py-2 text-white">
+        <button type="button" onClick={() => navigate('/caretaker')} className="flex flex-1 items-center gap-2 text-left">
+          <img src="/logo-white.svg" alt="" className="h-11 w-auto shrink-0" />
+          <span className="min-w-0">
+          <div className="text-xl font-extrabold whitespace-nowrap">{reference?.settings.property_name ?? si.appName}</div>
+          <div className="text-sm whitespace-nowrap opacity-85">{fullDateSi(now)}</div>
+          </span>
         </button>
         {profile.role === 'admin' && (
           <button type="button" onClick={() => navigate('/admin')} aria-label="Admin" className="flex min-h-12 items-center gap-1 rounded-xl bg-white/15 px-3 font-semibold">

@@ -209,7 +209,7 @@ function writeTab_(ss, name, header, rows, moneyCols) {
   var all = [header].concat(rows);
   sh.getRange(1, 1, all.length, header.length).setValues(all);
   sh.setFrozenRows(1);
-  sh.getRange(1, 1, 1, header.length).setFontWeight('bold').setBackground('#0f766e').setFontColor('#ffffff');
+  sh.getRange(1, 1, 1, header.length).setFontWeight('bold').setBackground('#09714E').setFontColor('#ffffff');
   if (rows.length) {
     moneyCols.forEach(function (c) { sh.getRange(2, c, rows.length, 1).setNumberFormat('#,##0'); });
   }
@@ -241,7 +241,7 @@ function logRun_(ss, started, status, data, link) {
     sh = ss.insertSheet('Backup Log', 0);
     sh.appendRow(['Backup time (Sri Lanka)', 'Status', 'Bookings', 'Payments', 'Expenses', 'Audit entries', 'JSON file', 'Seconds']);
     sh.setFrozenRows(1);
-    sh.getRange(1, 1, 1, 8).setFontWeight('bold').setBackground('#0f766e').setFontColor('#ffffff');
+    sh.getRange(1, 1, 1, 8).setFontWeight('bold').setBackground('#09714E').setFontColor('#ffffff');
   }
   sh.insertRowAfter(1);
   sh.getRange(2, 1, 1, 8).setValues([[

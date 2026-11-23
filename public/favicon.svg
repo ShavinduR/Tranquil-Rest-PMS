@@ -1,5 +1,13 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="112" fill="#0f766e"/>
-  <path d="M256 104 92 236h52v164h88V300h48v100h88V236h52z" fill="#fff"/>
-  <path d="M364 132a52 52 0 1 0 52 52 40 40 0 1 1-52-52z" fill="#fde68a"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-200 0 2000 2000" role="img" aria-label="Tranquil Rest">
+  <g fill="#09714E">
+    <!-- triangle ring: outer and inner outlines, rounded via stroke joins -->
+    <path fill-rule="evenodd" stroke="#09714E" stroke-width="30" stroke-linejoin="round"
+      d="M800 158 L1548 1381 L52 1381 Z M800 419 L247 1329 L1353 1329 Z"/>
+    <!-- four-point star -->
+    <path d="M800 730 C 836 930, 870 958, 1056 986 C 870 1014, 836 1042, 800 1242 C 764 1042, 730 1014, 544 986 C 730 958, 764 930, 800 730 Z"/>
+    <!-- water lines -->
+    <rect x="21" y="1458" width="1558" height="100" rx="50"/>
+    <rect x="268" y="1617" width="1064" height="100" rx="50"/>
+    <rect x="516" y="1776" width="568" height="100" rx="50"/>
+  </g>
 </svg>

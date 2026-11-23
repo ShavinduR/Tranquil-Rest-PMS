@@ -10,7 +10,7 @@ import { downloadCsv, toCsv } from '../lib/csv';
 import { Spinner, cx } from '../components/ui';
 import { Btn, Card, MonthPicker, PageHeader, TYPE_EN, STATUS_EN, fmtDateTime, monthLabel, useMonthData, type MonthData } from './common';
 
-const BAR = '#0d9488'; // validated: lightness, chroma and 3:1 contrast on white
+const BAR = '#09714E'; // brand green; validated: lightness, chroma and 3:1 contrast on white
 
 export const Dashboard = () => {
   const [month, setMonth] = useState(() => monthKey(new Date()));
