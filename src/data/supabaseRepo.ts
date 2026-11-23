@@ -1,10 +1,21 @@
 import { createClient, type PostgrestError, type SupabaseClient } from '@supabase/supabase-js';
 import type {
-  AddonPreset, AuditLog, Booking, BookingAddon, Expense, Payment, PricingRule, Profile, Room, Settings, SlotIssue,
+  AddonPreset, AuditLog, Booking, BookingAddon, Expense, Payment, PricingRule, Profile, Refund, Room, Settings, SlotIssue,
 } from '../types';
-import { NetworkError, SlotTakenError, type BackupFile, type Repo, type RestoreReport, type Session } from './repo';
+import {
+  BookingInPastError, DbUpgradeNeededError, NetworkError, PinLockedError, SlotTakenError,
+  type BackupFile, type Repo, type RestoreReport, type Session,
+} from './repo';
 
-const BOOKING_SELECT = '*, payments(*), addons:booking_addons(*)';
+const BOOKING_SELECT = '*, payments(*), addons:booking_addons(*), refunds(*)';
+/** For databases that predate migration 0007 (no refunds table). */
+const LEGACY_BOOKING_SELECT = '*, payments(*), addons:booking_addons(*)';
+
+/** PostgREST: function or table/relationship not in the schema (older database). */
+const isMissingInSchema = (error: PostgrestError | null | undefined): boolean =>
+  Boolean(error) &&
+  (['PGRST202', 'PGRST200', 'PGRST205', '42P01', '42883'].includes(error!.code) ||
+    /could not find (the function|a relationship|the table)|does not exist/i.test(error!.message));
 
 const isNetworkFailure = (error: { message?: string } | null | undefined): boolean =>
   !navigator.onLine || /fetch|network|load failed/i.test(error?.message ?? '');
@@ -12,6 +23,7 @@ const isNetworkFailure = (error: { message?: string } | null | undefined): boole
 /** Wraps PostgREST errors into the domain errors the UI understands. */
 const fail = (error: PostgrestError | Error): never => {
   if ('code' in error && error.code === '23P01') throw new SlotTakenError();
+  if (/BOOKING_IN_PAST/.test(error.message)) throw new BookingInPastError();
   if (isNetworkFailure(error)) throw new NetworkError(error);
   throw error;
 };
@@ -23,7 +35,9 @@ const must = <T,>(res: { data: T | null; error: PostgrestError | null }): T => {
 
 const num = (v: unknown): number => Number(v ?? 0);
 
-type BookingRow = Omit<Booking, 'payments' | 'addons' | 'room_charge'> & {
+type MoneyRow<T> = Omit<T, 'amount'> & { amount: unknown };
+type BookingRow = Omit<Booking, 'payments' | 'addons' | 'refunds' | 'room_charge'> & {
+  refunds?: MoneyRow<Refund>[] | null;
   room_charge: unknown;
   payments: (Omit<Payment, 'amount'> & { amount: unknown })[] | null;
   addons: (Omit<BookingAddon, 'amount' | 'unit_price'> & { amount: unknown; unit_price: unknown })[] | null;
@@ -31,8 +45,11 @@ type BookingRow = Omit<Booking, 'payments' | 'addons' | 'room_charge'> & {
 
 const toPayment = (p: Omit<Payment, 'amount'> & { amount: unknown }): Payment => ({ ...p, amount: num(p.amount) });
 
+const toRefund = (r: MoneyRow<Refund>): Refund => ({ ...r, amount: num(r.amount) });
+
 const toBooking = (row: BookingRow): Booking => ({
   ...row,
+  refunds: (row.refunds ?? []).map(toRefund).sort((a, b) => a.refunded_at.localeCompare(b.refunded_at)),
   room_charge: num(row.room_charge),
   payments: (row.payments ?? []).map(toPayment).sort((a, b) => a.paid_at.localeCompare(b.paid_at)),
   addons: (row.addons ?? [])
@@ -62,6 +79,28 @@ export const createSupabaseRepo = (url: string, anonKey: string): Repo => {
       );
     }
     return data as T;
+  };
+
+  // Bookings are read with their refunds; on a database without the refunds table
+  // (migration 0007 not run yet) fall back to the old shape instead of failing.
+  let hasRefunds = true;
+  const bookingQuery = async <T,>(run: (select: string) => PromiseLike<{ data: T | null; error: PostgrestError | null }>): Promise<T> => {
+    if (hasRefunds) {
+      const res = await run(BOOKING_SELECT);
+      if (!res.error || !isMissingInSchema(res.error)) return must(res);
+      hasRefunds = false;
+    }
+    return must(await run(LEGACY_BOOKING_SELECT));
+  };
+
+  /** Calls a migration-0007 function; if the database is older, uses the legacy path (or explains). */
+  const rpcOr = async (fn: string, args: Record<string, unknown>, legacy?: () => Promise<void>) => {
+    const res = await db.rpc(fn, args);
+    if (res.error && isMissingInSchema(res.error)) {
+      if (legacy) return legacy();
+      throw new DbUpgradeNeededError(fn);
+    }
+    must(res);
   };
 
   const uid = async (): Promise<string> => {
@@ -98,7 +137,11 @@ export const createSupabaseRepo = (url: string, anonKey: string): Repo => {
       return (data as Profile | null) ?? null;
     },
     async verifyPin(pin) {
-      return Boolean(must(await db.rpc('verify_pin', { p_pin: pin })));
+      const res = await db.rpc('verify_pin', { p_pin: pin });
+      if (res.error?.code === 'PT429' || /PIN_LOCKED/.test(res.error?.message ?? '')) {
+        throw new PinLockedError(Math.max(1, Number(res.error?.details) || 60));
+      }
+      return Boolean(must(res));
     },
 
     async loadReference() {
@@ -116,18 +159,30 @@ export const createSupabaseRepo = (url: string, anonKey: string): Repo => {
       };
     },
     async listBookings(from, to) {
-      const rows = must(
-        await db
-          .from('bookings')
-          .select(BOOKING_SELECT)
+      const rows = (await bookingQuery((sel) =>
+        db.from('bookings').select(sel)
           .or(`and(check_in_time.lt.${to.toISOString()},check_out_time.gt.${from.toISOString()}),status.eq.checked_in`)
           .order('check_in_time'),
-      ) as BookingRow[];
+      )) as unknown as BookingRow[];
       return rows.map(toBooking);
     },
     async getBooking(id) {
-      const row = must(await db.from('bookings').select(BOOKING_SELECT).eq('id', id).maybeSingle()) as BookingRow | null;
+      const row = (await bookingQuery((sel) => db.from('bookings').select(sel).eq('id', id).maybeSingle())) as unknown as BookingRow | null;
       return row ? toBooking(row) : null;
+    },
+    async listBookingsByIds(ids) {
+      const out: Booking[] = [];
+      for (let i = 0; i < ids.length; i += 100) {
+        const chunk = ids.slice(i, i + 100);
+        const rows = (await bookingQuery((sel) => db.from('bookings').select(sel).in('id', chunk))) as unknown as BookingRow[];
+        out.push(...rows.map(toBooking));
+      }
+      return out;
+    },
+    async listRefunds(from, to) {
+      const res = await db.from('refunds').select('*').gte('refunded_at', from.toISOString()).lt('refunded_at', to.toISOString());
+      if (res.error && isMissingInSchema(res.error)) return [];
+      return (must(res) as MoneyRow<Refund>[]).map(toRefund);
     },
     async listPayments(from, to) {
       const rows = must(
@@ -165,11 +220,27 @@ export const createSupabaseRepo = (url: string, anonKey: string): Repo => {
         must(await db.rpc('checkout_booking', { p_booking_id: id }));
         return;
       }
-      const patch: Record<string, unknown> = { status: change.status };
-      if (change.status === 'checked_in') patch.actual_check_in_at = new Date().toISOString();
-      if (change.status === 'cancelled') patch.cancel_reason = change.reason;
-      if (change.status === 'booked') Object.assign(patch, { cancelled_at: null, cancelled_by: null, cancel_reason: null });
-      must(await db.from('bookings').update(patch).eq('id', id));
+      // Caretaker changes go through audited database functions (migration 0007).
+      // The legacy direct updates only run against an older database.
+      const legacyUpdate = (patch: Record<string, unknown>) => async () => {
+        must(await db.from('bookings').update(patch).eq('id', id));
+      };
+      if (change.status === 'checked_in') {
+        await rpcOr('checkin_booking', { p_booking_id: id },
+          legacyUpdate({ status: 'checked_in', actual_check_in_at: new Date().toISOString() }));
+        return;
+      }
+      if (change.status === 'cancelled') {
+        const refund = change.refund && change.refund.amount > 0 ? change.refund : null;
+        await rpcOr(
+          'cancel_booking',
+          { p_booking_id: id, p_reason: change.reason, p_refund_amount: refund?.amount ?? 0, p_refund_method: refund?.method ?? null },
+          refund ? undefined : legacyUpdate({ status: 'cancelled', cancel_reason: change.reason }),
+        );
+        return;
+      }
+      // Admin restoring a cancelled booking.
+      must(await db.from('bookings').update({ status: 'booked', cancelled_at: null, cancelled_by: null, cancel_reason: null }).eq('id', id));
     },
     async addPayment(bookingId, p) {
       must(await db.from('payments').insert({ booking_id: bookingId, ...p, created_by: await uid() }));
@@ -182,6 +253,15 @@ export const createSupabaseRepo = (url: string, anonKey: string): Repo => {
     async setHousekeeping(roomId, state) {
       must(await db.rpc('set_room_housekeeping', { p_room_id: roomId, p_state: state }));
     },
+    async extendBooking(id, newCheckOut, extraCharge) {
+      await rpcOr('extend_booking', { p_booking_id: id, p_new_check_out: newCheckOut.toISOString(), p_extra_charge: extraCharge });
+    },
+    async moveBooking(id, roomId) {
+      await rpcOr('move_booking', { p_booking_id: id, p_new_room_id: roomId });
+    },
+    async setNotes(id, notes) {
+      await rpcOr('set_booking_notes', { p_booking_id: id, p_notes: notes });
+    },
 
     async updateBooking(id, patch) {
       must(await db.from('bookings').update(patch).eq('id', id));
@@ -192,11 +272,14 @@ export const createSupabaseRepo = (url: string, anonKey: string): Repo => {
     async deleteAddon(id) {
       must(await db.from('booking_addons').delete().eq('id', id));
     },
+    async deleteRefund(id) {
+      must(await db.from('refunds').delete().eq('id', id));
+    },
     async listBookingsByCheckIn(from, to) {
-      const rows = must(
-        await db.from('bookings').select(BOOKING_SELECT)
+      const rows = (await bookingQuery((sel) =>
+        db.from('bookings').select(sel)
           .gte('check_in_time', from.toISOString()).lt('check_in_time', to.toISOString()).order('check_in_time'),
-      ) as BookingRow[];
+      )) as unknown as BookingRow[];
       return rows.map(toBooking);
     },
     async listExpenses(fromDate, toDateExclusive) {
@@ -273,6 +356,7 @@ export const createSupabaseRepo = (url: string, anonKey: string): Repo => {
         .on('postgres_changes', { event: '*', schema: 'public', table: 'rooms' }, debounced)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'payments' }, debounced)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'booking_addons' }, debounced)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'refunds' }, debounced)
         .subscribe();
       return () => {
         clearTimeout(timer);

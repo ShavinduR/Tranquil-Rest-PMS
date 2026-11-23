@@ -4,10 +4,20 @@
 insert into auth.users (id, email, raw_user_meta_data) values
   ('00000000-0000-0000-0000-00000000000a', 'owner@example.com', '{"display_name":"Owner"}'),
   ('00000000-0000-0000-0000-00000000000c', 'caretaker@example.com', '{"display_name":"Sunil"}');
-update public.profiles set role = 'admin' where id = '00000000-0000-0000-0000-00000000000a';
 
 create or replace function pg_temp.assert(cond boolean, msg text) returns void language plpgsql as $$
 begin if not coalesce(cond, false) then raise exception 'ASSERTION FAILED: %', msg; end if; end $$;
+
+-- New accounts start with no access
+select pg_temp.assert((select count(*) = 2 from public.profiles where not active), 'new accounts start inactive');
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000c', false);
+select pg_temp.assert(not public.is_staff(), 'inactive account is not staff');
+select pg_temp.assert((select count(*) = 0 from public.rooms), 'inactive account sees no rooms');
+reset role;
+-- Owner activated as admin (README step), caretaker activated (as staff-admin does)
+update public.profiles set role = 'admin', active = true where id = '00000000-0000-0000-0000-00000000000a';
+update public.profiles set active = true where id = '00000000-0000-0000-0000-00000000000c';
 
 -- ---------- act as admin ----------
 set role authenticated;
@@ -95,14 +105,14 @@ select pg_temp.assert((select name = 'Room 2' and housekeeping = 'cleaning' from
 set role authenticated;
 
 -- Soft cancel frees the slot; cancelled can't be re-opened by caretaker
-update public.bookings set status = 'cancelled', cancel_reason = 'guest no-show' where id = '11111111-1111-1111-1111-111111111111';
+select public.cancel_booking('11111111-1111-1111-1111-111111111111', 'guest no-show');  -- caretakers cancel only via the audited function
 insert into public.bookings (room_id, booking_type, guest_phone, check_in_time, check_out_time, room_charge)
 select id, 'short_time', '0711111111', '2026-12-01 09:00+05:30', '2026-12-01 12:00+05:30', 1500
 from public.rooms where room_number = 1;
 do $$ begin
   update public.bookings set status = 'booked' where id = '11111111-1111-1111-1111-111111111111';
   raise exception 'ASSERTION FAILED: caretaker re-opened cancelled booking';
-exception when raise_exception then
+exception when raise_exception or insufficient_privilege then
   if sqlerrm like 'ASSERTION%' then raise; end if;
 end $$;
 
@@ -123,7 +133,7 @@ set role authenticated;
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000c', false);
 select public.create_booking(
   jsonb_build_object('room_id', (select id from public.rooms where room_number = 3), 'booking_type', 'short_time',
-    'guest_phone', '0770000000', 'guest_name', '  ', 'check_in_time', now() - interval '1 hour',
+    'guest_phone', '0770000000', 'guest_name', '  ', 'check_in_time', now() - interval '30 minutes',
     'check_out_time', now() + interval '2 hours', 'room_charge', 1500, 'status', 'checked_in'),
   '{"amount": 500, "method": "cash"}', '[{"label":"තේ","unit_price":100,"quantity":3}]') as new_id \gset
 select pg_temp.assert((select guest_name is null and actual_check_in_at is not null from public.bookings where id = :'new_id'), 'blank name stored as null, checked in stamped');

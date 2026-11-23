@@ -10,7 +10,8 @@
     "typecheck": "tsc -b",
     "test": "vitest run",
     "test:sql": "bash supabase/tests/run_local.sh",
-    "restore": "node scripts/restore-backup.mjs"
+    "restore": "node scripts/restore-backup.mjs",
+    "build:setup-sql": "bash scripts/build-setup-sql.sh"
   },
   "dependencies": {
     "@fontsource/noto-sans-sinhala": "^5.3.0",

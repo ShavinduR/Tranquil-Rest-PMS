@@ -141,10 +141,12 @@ var TYPE_EN = { short_time: 'Short Time', day: 'Day', night: 'Night', full_day: 
 var STATUS_EN = { booked: 'Booked', checked_in: 'Checked in', checked_out: 'Checked out', cancelled: 'Cancelled' };
 
 function writeSheets_(ss, d) {
+  d.refunds = d.refunds || []; // backups from before migration 0007 have none
   var rooms = indexBy_(d.rooms, 'id');
   var people = indexBy_(d.profiles, 'id');
   var bookingsById = indexBy_(d.bookings, 'id');
   var paidBy = sumBy_(d.payments, 'booking_id', 'amount');
+  var refundedBy = sumBy_(d.refunds, 'booking_id', 'amount');
   var addonsBy = sumBy_(d.booking_addons, 'booking_id', 'amount');
   var roomName = function (id) { return rooms[id] ? rooms[id].name : ''; };
   var person = function (id) { return id && people[id] ? people[id].display_name : ''; };
@@ -153,7 +155,7 @@ function writeSheets_(ss, d) {
     ['Check-in', 'Check-out', 'Room', 'Type', 'Status', 'Guest name', 'Phone', 'Room charge', 'Add-ons', 'Total', 'Paid', 'Balance',
      'Created at', 'Created by', 'Cancelled at', 'Cancel reason', 'Notes', 'Booking ID'],
     d.bookings.slice().reverse().map(function (b) {
-      var addons = addonsBy[b.id] || 0, paid = paidBy[b.id] || 0, total = num_(b.room_charge) + addons;
+      var addons = addonsBy[b.id] || 0, paid = (paidBy[b.id] || 0) - (refundedBy[b.id] || 0), total = num_(b.room_charge) + addons;
       return [fmt_(b.check_in_time), fmt_(b.check_out_time), roomName(b.room_id), TYPE_EN[b.booking_type] || b.booking_type,
         STATUS_EN[b.status] || b.status, b.guest_name || '', "'" + b.guest_phone, num_(b.room_charge), addons, total, paid,
         b.status === 'cancelled' ? 0 : Math.max(0, total - paid), fmt_(b.created_at), person(b.created_by),
@@ -167,6 +169,14 @@ function writeSheets_(ss, d) {
       return [fmt_(p.paid_at), roomName(b.room_id), b.guest_phone ? "'" + b.guest_phone : '', p.kind, p.method === 'cash' ? 'Cash' : 'Bank',
         num_(p.amount), person(p.created_by), p.booking_id, p.id];
     }), [6]);
+
+  writeTab_(ss, 'Refunds',
+    ['Refunded at', 'Room', 'Guest phone', 'Method', 'Amount', 'Reason', 'Booking ID', 'Refund ID'],
+    d.refunds.slice().reverse().map(function (r) {
+      var b = bookingsById[r.booking_id] || {};
+      return [fmt_(r.refunded_at), roomName(b.room_id), b.guest_phone ? "'" + b.guest_phone : '', r.method === 'cash' ? 'Cash' : 'Bank',
+        num_(r.amount), r.reason || '', r.booking_id, r.id];
+    }), [5]);
 
   writeTab_(ss, 'Food & Drinks',
     ['Added at', 'Room', 'Item', 'Unit price', 'Qty', 'Amount', 'Booking ID'],
@@ -219,6 +229,7 @@ function monthly_(d) {
   var m = {};
   var get = function (k) { return m[k] || (m[k] = { cash: 0, bank: 0, fixed: 0, variable: 0, bookings: 0, cancelled: 0 }); };
   d.payments.forEach(function (p) { var r = get(Utilities.formatDate(new Date(p.paid_at), TZ, 'yyyy-MM')); r[p.method] += num_(p.amount); });
+  (d.refunds || []).forEach(function (f) { var r = get(Utilities.formatDate(new Date(f.refunded_at), TZ, 'yyyy-MM')); r[f.method] -= num_(f.amount); });
   d.expenses.forEach(function (e) { get(e.expense_date.slice(0, 7))[e.expense_type] += num_(e.amount); });
   d.bookings.forEach(function (b) { var r = get(Utilities.formatDate(new Date(b.check_in_time), TZ, 'yyyy-MM')); if (b.status === 'cancelled') r.cancelled++; else r.bookings++; });
   return Object.keys(m).sort().reverse().map(function (k) {

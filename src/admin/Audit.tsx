@@ -5,7 +5,7 @@ import { Spinner, cx } from '../components/ui';
 import { Btn, Card, PageHeader, fmtDateTime, inputCls } from './common';
 
 const PAGE = 50;
-const TABLES = ['bookings', 'payments', 'booking_addons', 'expenses', 'profiles', 'rooms', 'pricing_rules', 'settings', 'addon_presets'];
+const TABLES = ['bookings', 'payments', 'refunds', 'booking_addons', 'expenses', 'profiles', 'rooms', 'pricing_rules', 'settings', 'addon_presets'];
 const IGNORED = new Set(['updated_at', 'updated_by', 'created_at']);
 
 const actionCls: Record<string, string> = {
@@ -27,6 +27,7 @@ const describe = (log: AuditLog): string => {
   const d = (log.new_data ?? log.old_data ?? {}) as Record<string, unknown>;
   if (log.table_name === 'bookings') return `${show(d.guest_name ?? d.guest_phone)} · ${show(d.booking_type)}`;
   if (log.table_name === 'payments') return `${show(d.kind)} ${show(d.method)} LKR ${show(d.amount)}`;
+  if (log.table_name === 'refunds') return `refund ${show(d.method)} LKR ${show(d.amount)}`;
   if (log.table_name === 'booking_addons') return `${show(d.label)} × ${show(d.quantity)}`;
   if (log.table_name === 'expenses') return `${show(d.category)} LKR ${show(d.amount)}`;
   if (log.table_name === 'pricing_rules') return `${show(d.category)} ${show(d.booking_type)}`;

@@ -4,19 +4,22 @@
  * the owner can try the full app before going live. Data lives in localStorage.
  */
 import type {
+  Refund,
   AddonPreset, AuditLog, Booking, Expense, Payment, PricingRule, Profile, Room, Settings,
 } from '../types';
 import { findSlotIssues, hasOverlap } from '../lib/conflicts';
 import { addMinutes, atClock, addDaysKey, dateKey, colomboParts } from '../lib/time';
-import { BACKUP_FORMAT, BACKUP_TABLES, SlotTakenError, type BackupFile, type BackupTable, type Repo, type RestoreReport, type Session } from './repo';
+import { BACKUP_FORMAT, BACKUP_TABLES, PinLockedError, SlotTakenError, type BackupFile, type BackupTable, type Repo, type RestoreReport, type Session } from './repo';
 
 type Db = {
   rooms: Room[];
   pricing: PricingRule[];
   settings: Settings;
   presets: AddonPreset[];
-  bookings: Omit<Booking, 'payments' | 'addons'>[];
+  bookings: Omit<Booking, 'payments' | 'addons' | 'refunds'>[];
   payments: Payment[];
+  /** Missing in demo data saved before refunds existed. */
+  refunds?: Refund[];
   addons: Booking['addons'];
   expenses: Expense[];
   audit: AuditLog[];
@@ -59,7 +62,7 @@ const seed = (): Db => {
   // a booking tomorrow, plus last month's history for the dashboard.
   const now = new Date();
   const today = dateKey(now);
-  const base = (p: Partial<Omit<Booking, 'payments' | 'addons'>>): Omit<Booking, 'payments' | 'addons'> => ({
+  const base = (p: Partial<Omit<Booking, 'payments' | 'addons' | 'refunds'>>): Omit<Booking, 'payments' | 'addons' | 'refunds'> => ({
     id: uuid(), room_id: 'room-1', booking_type: 'short_time', guest_name: null, guest_phone: '0771234567',
     check_in_time: nowIso(), check_out_time: nowIso(), room_charge: 1500, status: 'booked', notes: null,
     actual_check_in_at: null, actual_check_out_at: null, cancelled_at: null, cancel_reason: null,
@@ -82,7 +85,7 @@ const seed = (): Db => {
     check_in_time: atClock(tomorrow, '08:00').toISOString(), check_out_time: atClock(tomorrow, '17:00').toISOString(),
   });
 
-  const history: Omit<Booking, 'payments' | 'addons'>[] = [];
+  const history: Omit<Booking, 'payments' | 'addons' | 'refunds'>[] = [];
   const payments: Payment[] = [
     { id: uuid(), booking_id: inNow.id, kind: 'advance', method: 'cash', amount: 1500, paid_at: addMinutes(now, -60).toISOString(), created_by: CARETAKER.id },
     { id: uuid(), booking_id: later.id, kind: 'advance', method: 'bank', amount: 500, paid_at: addMinutes(now, -300).toISOString(), created_by: CARETAKER.id },
@@ -158,12 +161,19 @@ export const createDemoRepo = (): Repo => {
       old_data: (old_data ?? null) as AuditLog['old_data'], new_data: (new_data ?? null) as AuditLog['new_data'], created_at: nowIso(),
     });
   };
-  const hydrate = (b: Omit<Booking, 'payments' | 'addons'>): Booking => ({
+  const hydrate = (b: Omit<Booking, 'payments' | 'addons' | 'refunds'>): Booking => ({
     ...b,
     payments: db.payments.filter((p) => p.booking_id === b.id).sort((x, y) => x.paid_at.localeCompare(y.paid_at)),
     addons: db.addons.filter((a) => a.booking_id === b.id),
+    refunds: (db.refunds ?? []).filter((r) => r.booking_id === b.id),
   });
-  const guardOverlap = (b: Omit<Booking, 'payments' | 'addons'>) => {
+  const PIN_STATE = 'tr-demo-pin-attempts';
+  const requireActive = (id: string, statuses: Booking['status'][] = ['booked', 'checked_in']) => {
+    const b = db.bookings.find((x) => x.id === id);
+    if (!b || !statuses.includes(b.status)) throw new Error('BOOKING_NOT_ACTIVE');
+    return b;
+  };
+  const guardOverlap = (b: Omit<Booking, 'payments' | 'addons' | 'refunds'>) => {
     const issues = findSlotIssues(db.bookings.map(hydrate), b.room_id, new Date(b.check_in_time), new Date(b.check_out_time), 0, b.id);
     if (hasOverlap(issues)) throw new SlotTakenError();
   };
@@ -204,8 +214,22 @@ export const createDemoRepo = (): Repo => {
       return actor() ?? null;
     },
     async verifyPin(pin) {
+      // Mirrors the server: 5 wrong tries lock for 60 s, doubling each time.
       await delay();
-      return pin === DEMO_PIN;
+      const st = JSON.parse(localStorage.getItem(PIN_STATE) ?? '{"failed":0,"locks":0,"until":0}') as { failed: number; locks: number; until: number };
+      if (st.until > Date.now()) throw new PinLockedError(Math.ceil((st.until - Date.now()) / 1000));
+      if (pin === DEMO_PIN) {
+        localStorage.removeItem(PIN_STATE);
+        return true;
+      }
+      st.failed += 1;
+      if (st.failed >= 5) {
+        st.until = Date.now() + Math.min(60 * 2 ** st.locks, 3600) * 1000;
+        st.locks += 1;
+        st.failed = 0;
+      }
+      localStorage.setItem(PIN_STATE, JSON.stringify(st));
+      return false;
     },
 
     async loadReference() {
@@ -221,6 +245,13 @@ export const createDemoRepo = (): Repo => {
       const b = db.bookings.find((x) => x.id === id);
       return b ? hydrate(b) : null;
     },
+    async listRefunds(from, to) {
+      return (db.refunds ?? []).filter((r) => new Date(r.refunded_at) >= from && new Date(r.refunded_at) < to);
+    },
+    async listBookingsByIds(ids) {
+      const wanted = new Set(ids);
+      return db.bookings.filter((b) => wanted.has(b.id)).map(hydrate);
+    },
     async listPayments(from, to) {
       return db.payments.filter((p) => new Date(p.paid_at) >= from && new Date(p.paid_at) < to);
     },
@@ -234,7 +265,7 @@ export const createDemoRepo = (): Repo => {
     async createBooking(input) {
       await delay();
       const { advance, addons, ...rest } = input;
-      const b: Omit<Booking, 'payments' | 'addons'> = {
+      const b: Omit<Booking, 'payments' | 'addons' | 'refunds'> = {
         ...rest, id: uuid(), guest_name: rest.guest_name?.trim() || null,
         actual_check_in_at: rest.status === 'checked_in' ? nowIso() : null, actual_check_out_at: null,
         cancelled_at: null, cancel_reason: null, created_at: nowIso(), created_by: currentId(), updated_at: nowIso(),
@@ -265,7 +296,19 @@ export const createDemoRepo = (): Repo => {
         patchBooking(id, { status: 'checked_out', actual_check_out_at: nowIso(), check_out_time: new Date(out).toISOString() }, 'check_out');
         db.rooms = db.rooms.map((r) => (r.id === b.room_id ? { ...r, housekeeping: 'cleaning' } : r));
       }
-      if (change.status === 'cancelled') patchBooking(id, { status: 'cancelled', cancelled_at: nowIso(), cancel_reason: change.reason }, 'cancel');
+      if (change.status === 'checked_in' && b.status !== 'booked') throw new Error('BOOKING_NOT_WAITING');
+      if (change.status === 'cancelled') {
+        if (b.status !== 'booked' && !isAdmin()) throw new Error('BOOKING_NOT_CANCELLABLE');
+        const netPaid = hydrate(b).payments.reduce((s2, p) => s2 + p.amount, 0) - hydrate(b).refunds.reduce((s2, r) => s2 + r.amount, 0);
+        const refund = change.refund && change.refund.amount > 0 ? change.refund : null;
+        if (refund && refund.amount > netPaid) throw new Error('REFUND_AMOUNT_INVALID');
+        patchBooking(id, { status: 'cancelled', cancelled_at: nowIso(), cancel_reason: change.reason }, 'cancel');
+        if (refund) {
+          const row: Refund = { id: uuid(), booking_id: id, method: refund.method, amount: refund.amount, reason: 'cancellation', refunded_at: nowIso(), created_by: currentId() };
+          db.refunds = [...(db.refunds ?? []), row];
+          audit('refunds', row.id, 'insert', null, row);
+        }
+      }
       if (change.status === 'booked') patchBooking(id, { status: 'booked', cancelled_at: null, cancel_reason: null }, 'update');
       persist();
     },
@@ -283,6 +326,29 @@ export const createDemoRepo = (): Repo => {
         db.addons.push(row);
         audit('booking_addons', row.id, 'insert', null, row);
       }
+      persist();
+    },
+    async extendBooking(id, newCheckOut, extraCharge) {
+      await delay();
+      const b = requireActive(id);
+      if (newCheckOut <= new Date(b.check_out_time)) throw new Error('EXTEND_MUST_BE_LATER');
+      if (extraCharge < 0) throw new Error('EXTRA_CHARGE_NEGATIVE');
+      patchBooking(id, { check_out_time: newCheckOut.toISOString(), room_charge: b.room_charge + extraCharge });
+      persist();
+    },
+    async moveBooking(id, roomId) {
+      await delay();
+      const b = requireActive(id);
+      patchBooking(id, { room_id: roomId });
+      if (b.status === 'checked_in') {
+        db.rooms = db.rooms.map((r) => (r.id === b.room_id ? { ...r, housekeeping: 'cleaning' } : r.id === roomId ? { ...r, housekeeping: 'ready' } : r));
+      }
+      persist();
+    },
+    async setNotes(id, notes) {
+      await delay();
+      if (notes.length > 500) throw new Error('NOTES_TOO_LONG');
+      patchBooking(id, { notes: notes.trim() || null });
       persist();
     },
     async setHousekeeping(roomId, state) {
@@ -303,6 +369,13 @@ export const createDemoRepo = (): Repo => {
       const old = db.payments.find((p) => p.id === id);
       db.payments = db.payments.filter((p) => p.id !== id);
       audit('payments', id, 'delete', old, null);
+      persist();
+    },
+    async deleteRefund(id) {
+      requireAdmin();
+      const old = (db.refunds ?? []).find((r) => r.id === id);
+      db.refunds = (db.refunds ?? []).filter((r) => r.id !== id);
+      audit('refunds', id, 'delete', old, null);
       persist();
     },
     async deleteAddon(id) {
@@ -409,7 +482,7 @@ export const createDemoRepo = (): Repo => {
         format: BACKUP_FORMAT, exported_at: nowIso(), settings: { id: 1, ...db.settings },
         profiles: db.staff.map(({ id, role, display_name, active }) => ({ id, role, display_name, active })),
         rooms: db.rooms, pricing_rules: db.pricing, addon_presets: db.presets, expenses: db.expenses,
-        bookings: db.bookings, payments: db.payments, booking_addons: db.addons, audit_logs: db.audit,
+        bookings: db.bookings, payments: db.payments, refunds: db.refunds ?? [], booking_addons: db.addons, audit_logs: db.audit,
       } as unknown as BackupFile;
     },
     async restoreBackup(file, mode, dryRun, confirm) {
@@ -418,13 +491,13 @@ export const createDemoRepo = (): Repo => {
       if (mode === 'replace' && !dryRun && confirm !== 'REPLACE ALL DATA') throw new Error('Replace needs the confirmation text REPLACE ALL DATA');
       const keys: Record<BackupTable, keyof Db> = {
         rooms: 'rooms', pricing_rules: 'pricing', addon_presets: 'presets', expenses: 'expenses',
-        bookings: 'bookings', payments: 'payments', booking_addons: 'addons', audit_logs: 'audit',
+        bookings: 'bookings', payments: 'payments', refunds: 'refunds', booking_addons: 'addons', audit_logs: 'audit',
       };
       const next: Db = structuredClone(db);
       const tables: RestoreReport['tables'] = {};
       for (const t of BACKUP_TABLES) {
-        const rows = file[t] as { id: string | number }[];
-        const current = next[keys[t]] as unknown as { id: string | number }[];
+        const rows = (file[t] ?? []) as { id: string | number }[];
+        const current = (next[keys[t]] ?? []) as unknown as { id: string | number }[];
         if (mode === 'replace') {
           (next[keys[t]] as unknown) = rows;
           tables[t] = { restored: rows.length, skipped: 0 };

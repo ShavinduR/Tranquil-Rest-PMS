@@ -11,7 +11,7 @@ const CONFIRM_PHRASE = 'REPLACE ALL DATA';
 
 const TABLE_LABEL: Record<string, string> = {
   rooms: 'Rooms', pricing_rules: 'Prices', addon_presets: 'Food presets', expenses: 'Expenses', bookings: 'Bookings',
-  payments: 'Payments', booking_addons: 'Food & drinks sold', audit_logs: 'Audit log entries', settings: 'General settings',
+  payments: 'Payments', refunds: 'Refunds', booking_addons: 'Food & drinks sold', audit_logs: 'Audit log entries', settings: 'General settings',
 };
 
 /** Saves a JSON file to the device. */

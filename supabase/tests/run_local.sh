@@ -14,10 +14,27 @@ trap '$SUDO "$PGBIN/pg_ctl" -D "$DATA" stop -m fast >/dev/null; rm -rf "$DATA"' 
 PSQL="psql -h /tmp -p $PORT -U postgres -v ON_ERROR_STOP=1 -q"
 $PSQL -c "create database pms"
 $PSQL -d pms -f "$HERE/auth_stub.sql"
-for f in "$ROOT"/migrations/*.sql; do $PSQL -d pms -f "$f"; done
-$PSQL -d pms -f "$ROOT/seed.sql"
+if [ -n "${USE_SETUP_SQL:-}" ]; then
+  $PSQL -d pms -1 -f "$ROOT/setup.sql"   # single transaction, exactly as pasted in the SQL editor
+else
+  for f in "$ROOT"/migrations/*.sql; do $PSQL -d pms -f "$f"; done
+  $PSQL -d pms -f "$ROOT/seed.sql"
+fi
 $PSQL -d pms -o /dev/null -f "$HERE/tests.sql"
 $PSQL -d pms -o /dev/null -f "$HERE/tests_restore.sql"
+$PSQL -d pms -o /dev/null -f "$HERE/tests_hardening.sql"
+# Upgrade check: an existing database at the previous migration, with live-like data,
+# must take the newest migration without losing anything.
+$PSQL -c "create database pms_upgrade"
+$PSQL -d pms_upgrade -f "$HERE/auth_stub.sql"
+MIGRATIONS=("$ROOT"/migrations/*.sql)
+LAST="${MIGRATIONS[-1]}"
+for f in "${MIGRATIONS[@]}"; do [ "$f" = "$LAST" ] || $PSQL -d pms_upgrade -f "$f"; done
+$PSQL -d pms_upgrade -f "$ROOT/seed.sql"
+$PSQL -d pms_upgrade -o /dev/null -f "$HERE/upgrade_fixtures.sql"
+$PSQL -d pms_upgrade -1 -f "$LAST"            # one transaction, as in the SQL editor
+$PSQL -d pms_upgrade -o /dev/null -f "$HERE/upgrade_checks.sql"
+echo "UPGRADE TO $(basename "$LAST") OK (existing data preserved)"
 echo "ALL SQL TESTS PASSED"
 if [ -n "${DUMP_EXPORT:-}" ]; then
   $PSQL -d pms -At > "$DUMP_EXPORT" <<'SQL'

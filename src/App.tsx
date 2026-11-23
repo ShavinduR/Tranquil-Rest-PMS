@@ -10,6 +10,7 @@ import { CaretakerHome } from './caretaker/Home';
 import { BookingForm } from './caretaker/BookingForm';
 import { BookingPage } from './caretaker/BookingPage';
 import { RoomPage } from './caretaker/RoomPage';
+import { Availability } from './caretaker/Availability';
 import { AdminLayout } from './admin/AdminLayout';
 import { Dashboard } from './admin/Dashboard';
 import { AdminBookings } from './admin/Bookings';
@@ -44,6 +45,7 @@ export const App = () => (
       <Route index element={<CaretakerHome />} />
       <Route path="new/:mode" element={<BookingForm />} />
       <Route path="room/:id" element={<RoomPage />} />
+      <Route path="availability" element={<Availability />} />
       <Route path="booking/:id" element={<BookingPage />} />
     </Route>
     <Route path="/admin" element={<Protected adminOnly><AdminLayout /></Protected>}>

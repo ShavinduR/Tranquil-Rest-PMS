@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { BellRing, CalendarPlus, DoorOpen, Wallet, AlertTriangle, Snowflake } from 'lucide-react';
+import { BellRing, CalendarPlus, CalendarSearch, DoorOpen, Wallet, AlertTriangle, Snowflake } from 'lucide-react';
 import { useAppData } from '../data/AppData';
 import { useNow } from '../hooks/useNow';
 import { roomView, type RoomState, type RoomView } from '../lib/roomStatus';
@@ -22,7 +22,7 @@ const cardTone: Record<RoomState, string> = {
 const guestLabel = (b: Booking) => b.guest_name ?? formatLkPhone(b.guest_phone);
 
 export const CaretakerHome = () => {
-  const { reference, bookings, todayPayments, ready, canWrite } = useAppData();
+  const { reference, bookings, todayPayments, todayRefunds, ready, canWrite } = useAppData();
   const navigate = useNavigate();
   const now = useNow();
 
@@ -34,7 +34,7 @@ export const CaretakerHome = () => {
   if (!ready || !reference) return <Spinner />;
 
   const today = dateKey(now);
-  const cash = cashInHand(todayPayments, startOfDay(today), startOfDay(addDaysKey(today, 1)));
+  const cash = cashInHand(todayPayments, startOfDay(today), startOfDay(addDaysKey(today, 1)), todayRefunds);
 
   return (
     <div className="space-y-4 p-3 pb-10">
@@ -48,6 +48,11 @@ export const CaretakerHome = () => {
           {si.actions.future}
         </BigButton>
       </div>
+
+      {/* Read-only, so it stays available offline. */}
+      <BigButton size="lg" tone="blue" icon={<CalendarSearch className="size-8" aria-hidden />} onClick={() => navigate('/caretaker/availability')}>
+        {si.home.availability}
+      </BigButton>
 
       <div className="grid grid-cols-2 gap-3">
         {views.map((v) => (
@@ -84,7 +89,7 @@ const RoomCard = ({ view, now, onOpen }: { view: RoomView; now: Date; onOpen: ()
         <span className="text-3xl font-extrabold">{room.name_si}</span>
         {room.category === 'ac' && (
           <span className="flex items-center gap-1 rounded-full bg-white/25 px-2 py-0.5 text-sm font-bold">
-            <Snowflake className="size-4" aria-hidden /> AC
+            <Snowflake className="size-4" aria-hidden /> ඒසී
           </span>
         )}
       </div>

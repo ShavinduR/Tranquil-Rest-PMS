@@ -1,13 +1,15 @@
 import type {
   AddonPreset, AuditLog, Booking, BookingStatus, Expense, NewAddon, NewBooking, NewPayment,
-  Payment, PricingRule, Profile, ReferenceData, Room, Settings, SlotIssue, Housekeeping,
+  Payment, PaymentMethod, PricingRule, Profile, ReferenceData, Refund, Room, Settings, SlotIssue, Housekeeping,
 } from '../types';
 
 export type Session = { userId: string; email: string | null };
 
 export const BACKUP_FORMAT = 'tranquil-rest-backup/1';
-export const BACKUP_TABLES = ['rooms', 'pricing_rules', 'addon_presets', 'expenses', 'bookings', 'payments', 'booking_addons', 'audit_logs'] as const;
+export const BACKUP_TABLES = ['rooms', 'pricing_rules', 'addon_presets', 'expenses', 'bookings', 'payments', 'refunds', 'booking_addons', 'audit_logs'] as const;
 export type BackupTable = (typeof BACKUP_TABLES)[number];
+/** Tables that older backup files (before migration 0007) do not have. */
+const OPTIONAL_BACKUP_TABLES: readonly BackupTable[] = ['refunds'];
 
 export type BackupFile = {
   format: typeof BACKUP_FORMAT;
@@ -46,6 +48,10 @@ export const parseBackupFile = (text: string): BackupFile => {
   const d = data as Partial<BackupFile> | null;
   if (!d || d.format !== BACKUP_FORMAT) throw new Error('This is not a Tranquil Rest backup file.');
   for (const t of BACKUP_TABLES) {
+    if (OPTIONAL_BACKUP_TABLES.includes(t) && d[t] === undefined) {
+      (d as Record<string, unknown>)[t] = [];
+      continue;
+    }
     if (!Array.isArray(d[t])) throw new Error(`Backup file is incomplete (missing ${t}).`);
   }
   return d as BackupFile;
@@ -58,13 +64,39 @@ export type BookingPatch = Partial<
 export type StatusChange =
   | { status: Extract<BookingStatus, 'checked_in'> }
   | { status: Extract<BookingStatus, 'checked_out'> }
-  | { status: Extract<BookingStatus, 'cancelled'>; reason: string | null }
+  | {
+      status: Extract<BookingStatus, 'cancelled'>;
+      reason: string | null;
+      /** Money given back now. Null/0 = the advance is kept (forfeited). */
+      refund?: { amount: number; method: PaymentMethod } | null;
+    }
   | { status: Extract<BookingStatus, 'booked'> };
 
 /** Raised for double-booking so the UI can show a precise Sinhala message. */
 export class SlotTakenError extends Error {
   constructor() {
     super('slot_taken');
+  }
+}
+
+/** The PIN is locked on the server after too many wrong tries. */
+export class PinLockedError extends Error {
+  constructor(public readonly seconds: number) {
+    super('pin_locked');
+  }
+}
+
+/** Caretakers cannot create bookings that start in the past. */
+export class BookingInPastError extends Error {
+  constructor() {
+    super('booking_in_past');
+  }
+}
+
+/** The database is missing a newer migration this action needs. */
+export class DbUpgradeNeededError extends Error {
+  constructor(what: string) {
+    super(`Database update needed (${what}). Run the latest migration.`);
   }
 }
 
@@ -84,6 +116,7 @@ export type Repo = {
   signIn(email: string, password: string): Promise<void>;
   signOut(): Promise<void>;
   getProfile(): Promise<Profile | null>;
+  /** True/false for right/wrong; throws PinLockedError when the server has locked the PIN. */
   verifyPin(pin: string): Promise<boolean>;
 
   // shared reads
@@ -92,6 +125,8 @@ export type Repo = {
   listBookings(from: Date, to: Date): Promise<Booking[]>;
   getBooking(id: string): Promise<Booking | null>;
   listPayments(from: Date, to: Date): Promise<Payment[]>;
+  listRefunds(from: Date, to: Date): Promise<Refund[]>;
+  listBookingsByIds(ids: readonly string[]): Promise<Booking[]>;
   checkSlot(roomId: string, start: Date, end: Date, excludeId?: string): Promise<SlotIssue[]>;
   findGuestName(phone: string): Promise<string | null>;
 
@@ -101,11 +136,16 @@ export type Repo = {
   addPayment(bookingId: string, p: NewPayment): Promise<void>;
   addAddons(bookingId: string, items: NewAddon[]): Promise<void>;
   setHousekeeping(roomId: string, state: Housekeeping): Promise<void>;
+  /** Later check-out; extraCharge (≥ 0) is added to the room charge. */
+  extendBooking(id: string, newCheckOut: Date, extraCharge: number): Promise<void>;
+  moveBooking(id: string, roomId: string): Promise<void>;
+  setNotes(id: string, notes: string): Promise<void>;
 
   // admin
   updateBooking(id: string, patch: BookingPatch): Promise<void>;
   deletePayment(id: string): Promise<void>;
   deleteAddon(id: string): Promise<void>;
+  deleteRefund(id: string): Promise<void>;
   listBookingsByCheckIn(from: Date, to: Date): Promise<Booking[]>;
   listExpenses(fromDate: string, toDateExclusive: string): Promise<Expense[]>;
   addExpense(e: Omit<Expense, 'id' | 'created_at'>): Promise<void>;

@@ -1,7 +1,7 @@
 import type { Booking, Room } from '../types';
 import { bookingTotal, balanceDue, paidTotal } from './booking';
 import { plain } from './money';
-import { normalizeLkPhone } from './phone';
+import { parsePhone } from './phone';
 import { colomboParts } from './time';
 
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -32,7 +32,7 @@ export const confirmationMessage = (booking: Booking, room: Room, propertyName: 
 };
 
 export const whatsappLink = (phone: string, message: string): string | null => {
-  const normalized = normalizeLkPhone(phone);
-  if (!normalized) return null;
-  return `https://wa.me/${normalized}?text=${encodeURIComponent(message)}`;
+  const parsed = parsePhone(phone);
+  if (!parsed) return null;
+  return `https://wa.me/${parsed.waDigits}?text=${encodeURIComponent(message)}`;
 };

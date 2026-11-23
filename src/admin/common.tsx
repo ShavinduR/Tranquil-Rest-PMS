@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { repo } from '../data';
-import type { Booking, Expense, Payment } from '../types';
+import type { Booking, Expense, Payment, Refund } from '../types';
 import { monthKey, monthRange, shiftMonth } from '../lib/time';
 import { cx } from '../components/ui';
 
@@ -56,7 +56,15 @@ export const Btn = ({ children, onClick, tone = 'default', disabled, type = 'but
 
 export const inputCls = 'min-h-10 w-full rounded-xl border border-slate-300 bg-white px-3 outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20';
 
-export type MonthData = { bookings: Booking[]; stays: Booking[]; payments: Payment[]; expenses: Expense[] };
+export type MonthData = {
+  bookings: Booking[];
+  stays: Booking[];
+  payments: Payment[];
+  refunds: Refund[];
+  expenses: Expense[];
+  /** Every booking referenced by this month's payments/refunds, including earlier months' (for CSV room names). */
+  byId: Map<string, Booking>;
+};
 
 /** Everything the finance views need for one month. */
 export const useMonthData = (month: string) => {
@@ -67,14 +75,19 @@ export const useMonthData = (month: string) => {
     try {
       const { start, end } = monthRange(month);
       const next = shiftMonth(month, 1);
-      const [overlapping, stays, payments, expenses] = await Promise.all([
+      const [overlapping, stays, payments, refunds, expenses] = await Promise.all([
         repo.listBookings(start, end),
         repo.listBookingsByCheckIn(start, end),
         repo.listPayments(start, end),
+        repo.listRefunds(start, end),
         repo.listExpenses(`${month}-01`, `${next}-01`),
       ]);
       const byId = new Map([...overlapping, ...stays].map((b) => [b.id, b]));
-      setData({ bookings: [...byId.values()], stays, payments, expenses });
+      const bookings = [...byId.values()];
+      // A balance paid this month for a stay from an earlier month: fetch that booking too.
+      const missing = [...new Set([...payments, ...refunds].map((p) => p.booking_id))].filter((id) => !byId.has(id));
+      if (missing.length > 0) for (const b of await repo.listBookingsByIds(missing)) byId.set(b.id, b);
+      setData({ bookings, stays, payments, refunds, expenses, byId });
     } catch {
       setError('Could not load data. Check your connection.');
     }

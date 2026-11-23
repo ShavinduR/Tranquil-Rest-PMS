@@ -1,4 +1,4 @@
-import type { Booking, BookingType, Expense, Payment, Room } from '../types';
+import type { Booking, BookingType, Expense, Payment, Refund, Room } from '../types';
 import { BOOKING_TYPES } from '../types';
 import { addonsTotal, balanceDue, bookingTotal } from './booking';
 import { sum } from './money';
@@ -6,7 +6,9 @@ import { dateKey, daysInMonth, monthRange } from './time';
 
 export type MonthSummary = {
   month: string;
+  /** Net of refunds. */
   collected: { cash: number; bank: number; total: number };
+  refunded: { cash: number; bank: number; total: number };
   /** Charges for stays that started this month (room + add-ons), cancelled excluded. */
   billed: { rooms: number; addons: number; total: number };
   pendingBalances: number;
@@ -29,6 +31,7 @@ const inRange = (iso: string, start: Date, end: Date): boolean => {
  * @param bookings bookings whose check-in falls in the month (any status)
  * @param payments payments whose paid_at falls in the month (any booking)
  * @param expenses expenses dated in the month
+ * @param refunds refunds made in the month (optional; older databases have none)
  */
 export const summarizeMonth = (
   month: string,
@@ -36,11 +39,15 @@ export const summarizeMonth = (
   payments: readonly Payment[],
   expenses: readonly Expense[],
   rooms: readonly Room[],
+  refunds: readonly Refund[] = [],
 ): MonthSummary => {
   const { start, end } = monthRange(month);
   const monthPayments = payments.filter((p) => inRange(p.paid_at, start, end));
-  const cash = sum(monthPayments.filter((p) => p.method === 'cash').map((p) => p.amount));
-  const bank = sum(monthPayments.filter((p) => p.method === 'bank').map((p) => p.amount));
+  const monthRefunds = refunds.filter((r) => inRange(r.refunded_at, start, end));
+  const refundCash = sum(monthRefunds.filter((r) => r.method === 'cash').map((r) => r.amount));
+  const refundBank = sum(monthRefunds.filter((r) => r.method === 'bank').map((r) => r.amount));
+  const cash = sum(monthPayments.filter((p) => p.method === 'cash').map((p) => p.amount)) - refundCash;
+  const bank = sum(monthPayments.filter((p) => p.method === 'bank').map((p) => p.amount)) - refundBank;
 
   const stays = bookings.filter((b) => inRange(b.check_in_time, start, end));
   const live = stays.filter((b) => b.status !== 'cancelled');
@@ -77,7 +84,9 @@ export const summarizeMonth = (
     const date = `${month}-${String(i + 1).padStart(2, '0')}`;
     return {
       date,
-      collected: sum(monthPayments.filter((p) => dateKey(new Date(p.paid_at)) === date).map((p) => p.amount)),
+      collected:
+        sum(monthPayments.filter((p) => dateKey(new Date(p.paid_at)) === date).map((p) => p.amount)) -
+        sum(monthRefunds.filter((r) => dateKey(new Date(r.refunded_at)) === date).map((r) => r.amount)),
       expenses: sum(monthExpenses.filter((e) => e.expense_date === date).map((e) => e.amount)),
     };
   });
@@ -85,6 +94,7 @@ export const summarizeMonth = (
   return {
     month,
     collected: { cash, bank, total: cash + bank },
+    refunded: { cash: refundCash, bank: refundBank, total: refundCash + refundBank },
     billed: { rooms: roomsBilled, addons: addonsBilled, total: roomsBilled + addonsBilled },
     pendingBalances: sum(live.map(balanceDue)),
     expenses: { fixed, variable, total: fixed + variable, byCategory },

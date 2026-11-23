@@ -1,8 +1,8 @@
-import type { Booking, Payment, ReferenceData } from '../types';
+import type { Booking, Payment, ReferenceData, Refund } from '../types';
 
 /**
  * Read-only offline snapshot: reference data + bookings from yesterday to 7 days
- * ahead + today's payments. Written after every successful online refresh.
+ * ahead + today's payments and refunds. Written after every successful online refresh.
  */
 export type Snapshot = {
   savedAt: string;
@@ -10,6 +10,8 @@ export type Snapshot = {
   reference: ReferenceData;
   bookings: Booking[];
   todayPayments: Payment[];
+  /** Missing in snapshots saved by older versions. */
+  todayRefunds?: Refund[];
 };
 
 const KEY = 'tr-offline-snapshot-v1';

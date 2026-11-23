@@ -3,32 +3,36 @@ import { repo } from '../data';
 import type { Session } from '../data/repo';
 import type { Profile } from '../types';
 import { clearSnapshot } from '../data/cache';
+import { NetworkError, PinLockedError } from '../data/repo';
+import { MAX_OFFLINE_FAILURES, checkVerifier, createVerifier, parseVerifier } from '../lib/pinVerifier';
 
 type AuthState =
   | { status: 'loading' }
   | { status: 'signed_out' }
   | { status: 'signed_in'; session: Session; profile: Profile };
 
+export type UnlockResult = 'ok' | 'wrong' | 'offline_unknown' | { lockedFor: number };
+
 type AuthValue = {
   state: AuthState;
   locked: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
-  unlock: (pin: string) => Promise<'ok' | 'wrong' | 'offline_unknown'>;
+  unlock: (pin: string) => Promise<UnlockResult>;
   lock: () => void;
 };
 
 const Ctx = createContext<AuthValue | null>(null);
 
 const PROFILE_KEY = 'tr-profile';
-const PIN_CHECK_KEY = 'tr-pin-check';
+/** Older versions stored a plain SHA-256 here; it is deleted on start-up. */
+const LEGACY_PIN_CHECK_KEY = 'tr-pin-check';
+const PIN_CHECK_KEY = 'tr-pin-verifier-v2';
+const OFFLINE_FAILS_KEY = 'tr-pin-offline-fails';
+localStorage.removeItem(LEGACY_PIN_CHECK_KEY);
 const UNLOCKED_KEY = 'tr-unlocked-at';
 const IDLE_LOCK_MS = 10 * 60_000;
 
-const sha256 = async (text: string): Promise<string> => {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
-  return Array.from(new Uint8Array(buf), (b) => b.toString(16).padStart(2, '0')).join('');
-};
 
 const readCachedProfile = (userId: string): Profile | null => {
   try {
@@ -153,16 +157,33 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       },
       unlock: async (pin) => {
         if (state.status !== 'signed_in') return 'wrong';
-        const digest = await sha256(`${state.session.userId}:${pin}`);
+        const userId = state.session.userId;
         let ok: boolean;
         try {
           ok = await repo.verifyPin(pin);
-          if (ok) localStorage.setItem(PIN_CHECK_KEY, digest);
-        } catch {
-          // Offline: fall back to the digest stored after the last online unlock.
-          const stored = localStorage.getItem(PIN_CHECK_KEY);
-          if (!stored) return 'offline_unknown';
-          ok = stored === digest;
+          if (ok) {
+            localStorage.setItem(PIN_CHECK_KEY, JSON.stringify(await createVerifier(userId, pin)));
+            localStorage.removeItem(OFFLINE_FAILS_KEY);
+          }
+        } catch (e) {
+          // The server decides; a server-side lock is never bypassed by the offline check.
+          if (e instanceof PinLockedError) return { lockedFor: e.seconds };
+          if (!(e instanceof NetworkError) && navigator.onLine) return 'wrong';
+          // Offline: compare with the verifier saved after the last online unlock.
+          const verifier = parseVerifier(localStorage.getItem(PIN_CHECK_KEY));
+          if (!verifier) return 'offline_unknown';
+          ok = await checkVerifier(verifier, userId, pin);
+          if (!ok) {
+            const fails = Number(localStorage.getItem(OFFLINE_FAILS_KEY) ?? 0) + 1;
+            if (fails >= MAX_OFFLINE_FAILURES) {
+              localStorage.removeItem(PIN_CHECK_KEY);
+              localStorage.removeItem(OFFLINE_FAILS_KEY);
+              return 'offline_unknown';
+            }
+            localStorage.setItem(OFFLINE_FAILS_KEY, String(fails));
+          } else {
+            localStorage.removeItem(OFFLINE_FAILS_KEY);
+          }
         }
         if (!ok) return 'wrong';
         lastActivity.current = Date.now();

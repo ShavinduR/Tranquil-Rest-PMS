@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import type { Booking, Payment, ReferenceData } from '../types';
+import type { Booking, Payment, ReferenceData, Refund } from '../types';
 import { addDaysKey, dateKey, startOfDay } from '../lib/time';
 import { useOnline } from '../hooks/useOnline';
 import { repo } from '.';
@@ -10,6 +10,7 @@ type AppData = {
   reference: ReferenceData | null;
   bookings: Booking[];
   todayPayments: Payment[];
+  todayRefunds: Refund[];
   /** True when showing the offline snapshot instead of live data. */
   stale: boolean;
   lastSync: string | null;
@@ -37,6 +38,7 @@ export const AppDataProvider = ({ userId, children }: { userId: string; children
   const [reference, setReference] = useState<ReferenceData | null>(null);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [todayPayments, setTodayPayments] = useState<Payment[]>([]);
+  const [todayRefunds, setTodayRefunds] = useState<Refund[]>([]);
   const [stale, setStale] = useState(false);
   const [lastSync, setLastSync] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
@@ -48,6 +50,7 @@ export const AppDataProvider = ({ userId, children }: { userId: string; children
       setReference(snap.reference);
       setBookings(snap.bookings);
       setTodayPayments(snap.todayPayments);
+      setTodayRefunds(snap.todayRefunds ?? []);
       setLastSync(snap.savedAt);
     }
     setStale(true);
@@ -63,19 +66,21 @@ export const AppDataProvider = ({ userId, children }: { userId: string; children
       }
       try {
         const { from, to, dayStart, dayEnd } = windowBounds();
-        const [ref, list, pays] = await Promise.all([
+        const [ref, list, pays, refunds] = await Promise.all([
           repo.loadReference(),
           repo.listBookings(from, to),
           repo.listPayments(dayStart, dayEnd),
+          repo.listRefunds(dayStart, dayEnd),
         ]);
         const savedAt = new Date().toISOString();
         setReference(ref);
         setBookings(list);
         setTodayPayments(pays);
+        setTodayRefunds(refunds);
         setLastSync(savedAt);
         setStale(false);
         setReady(true);
-        saveSnapshot({ savedAt, userId, reference: ref, bookings: list, todayPayments: pays });
+        saveSnapshot({ savedAt, userId, reference: ref, bookings: list, todayPayments: pays, todayRefunds: refunds });
       } catch {
         applySnapshot();
       }
@@ -104,8 +109,8 @@ export const AppDataProvider = ({ userId, children }: { userId: string; children
   }, [online, refresh]);
 
   const value = useMemo<AppData>(
-    () => ({ ready, reference, bookings, todayPayments, stale, lastSync, online, canWrite: online && !stale, refresh }),
-    [ready, reference, bookings, todayPayments, stale, lastSync, online, refresh],
+    () => ({ ready, reference, bookings, todayPayments, todayRefunds, stale, lastSync, online, canWrite: online && !stale, refresh }),
+    [ready, reference, bookings, todayPayments, todayRefunds, stale, lastSync, online, refresh],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 };
