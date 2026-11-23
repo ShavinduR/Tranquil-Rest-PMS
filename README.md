@@ -44,6 +44,18 @@ Choose *Caretaker device* (PIN `1234`) or *Owner / Admin login*. Any email works
 
 7. **Turn on nightly Google backups** (Sheet + Drive): see [`backup/README.md`](backup/README.md). Restoring is done from *Admin → Restore*, or with `npm run restore` (same README).
 
+## Managing staff accounts
+
+| Task | How |
+|---|---|
+| Add a caretaker | Supabase → *Authentication → Users → Add user* (email + password, tick *Auto confirm*). They appear in *Admin → Settings → Staff & PINs* as a caretaker. |
+| Set or change a PIN | *Admin → Settings → Staff & PINs* → type 4 digits → key button. Works immediately, on every device. |
+| Rename / change role | Same card: edit the name, or switch Caretaker ↔ Admin. |
+| Sign a phone out (at the phone) | Lock it → on the PIN screen tap *මෙම දුරකථනයෙන් ඉවත් වන්න · Sign out this device* → confirm. The owner's email/password is needed to sign it in again. |
+| Lock someone out remotely (lost phone, staff left) | Untick *Active* in Staff & PINs. Their phone signs out within ~2 minutes (or as soon as it reconnects), and the database refuses all their requests immediately. |
+| Change a password / delete for good | Supabase → *Authentication → Users* → the user's ⋯ menu. Deactivating is usually enough and keeps their history intact. |
+| Owner signing out | Admin sidebar → sign-out icon (top). |
+
 ## How the business rules are enforced
 
 | Rule | Where |

@@ -110,6 +110,11 @@ export const si = {
     locked: 'බොහෝ වාර ගණනක් වැරදියි. තත්පර 30ක් රැඳී සිටින්න.',
     clear: 'මකන්න',
     offlineFirst: 'පළමු වරට අන්තර්ජාලය අවශ්‍යයි',
+    signOut: 'මෙම දුරකථනයෙන් ඉවත් වන්න',
+    signOutTitle: 'මෙම දුරකථනයෙන් ඉවත් වෙනවාද?',
+    signOutBody: 'නැවත ඇතුළු වීමට අයිතිකරුගේ email සහ password අවශ්‍ය වේ.',
+    signOutConfirm: 'ඔව්, ඉවත් වන්න',
+    signOutCancel: 'නැහැ, ආපසු',
   },
   cancelDialog: {
     title: 'මෙම වෙන්කිරීම අවලංගු කරන්නද?',

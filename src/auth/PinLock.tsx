@@ -3,14 +3,17 @@ import { Delete } from 'lucide-react';
 import { useAuth } from './AuthContext';
 import { si } from '../i18n/si';
 import { isDemo } from '../data';
-import { cx } from '../components/ui';
+import { BigButton, Dialog, cx } from '../components/ui';
+import { useNavigate } from 'react-router-dom';
 
 const MAX_ATTEMPTS = 5;
 const LOCKOUT_MS = 30_000;
 
 /** Large 3×4 keypad; auto-submits on the 4th digit. */
 export const PinLock = () => {
-  const { unlock, state } = useAuth();
+  const { unlock, state, signOut } = useAuth();
+  const navigate = useNavigate();
+  const [confirmOut, setConfirmOut] = useState(false);
   const [pin, setPin] = useState('');
   const [message, setMessage] = useState<string | null>(null);
   const [attempts, setAttempts] = useState(0);
@@ -72,6 +75,22 @@ export const PinLock = () => {
         <Key onClick={() => press('0')} disabled={blocked}>0</Key>
         <Key onClick={() => setPin((p) => p.slice(0, -1))} disabled={blocked} label="Backspace"><Delete className="mx-auto size-9" /></Key>
       </div>
+
+      {/* Deliberately small and two-step: signing out needs the owner to sign the phone in again. */}
+      <button type="button" onClick={() => setConfirmOut(true)} className="mt-10 text-sm text-white/70 underline underline-offset-4">
+        {si.pin.signOut} · Sign out this device
+      </button>
+      <Dialog open={confirmOut} onClose={() => setConfirmOut(false)} labelledBy="signout-title">
+        <div className="si text-slate-900">
+          <h2 id="signout-title" className="text-2xl font-bold">{si.pin.signOutTitle}</h2>
+          <p className="mt-2 text-lg">{si.pin.signOutBody}</p>
+          <p className="mt-1 text-sm text-slate-500">The owner's email and password will be needed to sign this phone in again.</p>
+          <div className="mt-5 space-y-3">
+            <BigButton tone="neutral" size="xl" onClick={() => setConfirmOut(false)}>{si.pin.signOutCancel}</BigButton>
+            <BigButton tone="red" onClick={() => void signOut().then(() => navigate('/', { replace: true }))}>{si.pin.signOutConfirm}</BigButton>
+          </div>
+        </div>
+      </Dialog>
     </div>
   );
 };

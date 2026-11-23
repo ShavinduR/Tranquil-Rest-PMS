@@ -176,6 +176,7 @@ const StaffCard = ({ onToast }: { onToast: (m: string) => void }) => {
     <Card title="Staff & PINs">
       <p className="mb-3 text-sm text-slate-500">
         Create staff logins in Supabase → Authentication → Users. They appear here as caretakers; set a 4-digit PIN, then sign in once on the caretaker&apos;s phone.
+        {' '}Untick <b>Active</b> to lock someone out: their phone signs out within about 2 minutes and cannot load any data.
         {isDemo && ' (Demo: PIN is always 1234.)'}
       </p>
       <div className="space-y-2">

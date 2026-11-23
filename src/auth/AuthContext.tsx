@@ -78,6 +78,38 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     });
   }, [resolve]);
 
+  // Remote sign-out: if the owner deactivates this account (Settings → Staff),
+  // the device signs itself out at the next check. Offline checks are skipped.
+  const signedInId = state.status === 'signed_in' ? state.session.userId : null;
+  useEffect(() => {
+    if (!signedInId) return;
+    const check = async () => {
+      if (!navigator.onLine) return;
+      try {
+        const profile = await repo.getProfile();
+        if (!profile || !profile.active) {
+          await repo.signOut();
+          localStorage.removeItem(PROFILE_KEY);
+          localStorage.removeItem(PIN_CHECK_KEY);
+          sessionStorage.removeItem(UNLOCKED_KEY);
+          clearSnapshot();
+          setState({ status: 'signed_out' });
+        }
+      } catch {
+        // Network trouble is not a reason to sign anyone out.
+      }
+    };
+    const onVisible = () => document.visibilityState === 'visible' && void check();
+    const id = setInterval(() => void check(), 2 * 60_000);
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('online', onVisible);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('online', onVisible);
+    };
+  }, [signedInId]);
+
   // Idle auto-lock for caretaker devices.
   useEffect(() => {
     const touch = () => {
