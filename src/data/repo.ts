@@ -72,6 +72,9 @@ export type Repo = {
   listStaff(): Promise<Profile[]>;
   updateStaff(id: string, patch: Partial<Pick<Profile, 'role' | 'display_name' | 'active'>>): Promise<void>;
   setStaffPin(id: string, pin: string): Promise<void>;
+  /** Creates/rotates the read-only key used by the Google Sheets backup. Returned once. */
+  rotateBackupKey(): Promise<string>;
+  backupKeyStatus(): Promise<{ created_at: string; last_used: string | null } | null>;
 
   /** Subscribe to remote changes (other devices). Returns unsubscribe. */
   subscribe(cb: () => void): () => void;

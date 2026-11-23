@@ -18,3 +18,14 @@ for f in "$ROOT"/migrations/*.sql; do $PSQL -d pms -f "$f"; done
 $PSQL -d pms -f "$ROOT/seed.sql"
 $PSQL -d pms -o /dev/null -f "$HERE/tests.sql"
 echo "ALL SQL TESTS PASSED"
+if [ -n "${DUMP_EXPORT:-}" ]; then
+  $PSQL -d pms -At > "$DUMP_EXPORT" <<'SQL'
+set role authenticated;
+select set_config('request.jwt.claim.sub','00000000-0000-0000-0000-00000000000a',false) \g /dev/null
+select public.rotate_backup_key() as k \gset
+reset role;
+set role anon;
+select public.export_backup(:'k');
+SQL
+  echo "export written to $DUMP_EXPORT"
+fi

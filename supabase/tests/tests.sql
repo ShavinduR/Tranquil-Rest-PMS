@@ -136,3 +136,30 @@ select public.checkout_booking(:'new_id');
 select pg_temp.assert((select status = 'checked_out' and check_out_time <= now() from public.bookings where id = :'new_id'), 'checkout shrinks slot');
 select pg_temp.assert((select housekeeping = 'cleaning' from public.rooms where room_number = 3), 'room goes to cleaning');
 reset role;
+
+-- ---------- backup export ----------
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000c', false);
+do $$ begin
+  perform public.rotate_backup_key();
+  raise exception 'ASSERTION FAILED: caretaker rotated backup key';
+exception when raise_exception then
+  if sqlerrm like 'ASSERTION%' then raise; end if;
+end $$;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000a', false);
+select public.rotate_backup_key() as bkey \gset
+reset role;
+set role anon;
+select set_config('request.jwt.claim.sub', '', false);
+select pg_temp.assert((public.export_backup(:'bkey') ->> 'format') = 'tranquil-rest-backup/1', 'anon + key exports');
+select pg_temp.assert(jsonb_array_length(public.export_backup(:'bkey') -> 'rooms') = 5, 'export has rooms');
+select pg_temp.assert(not (public.export_backup(:'bkey')::text like '%pin_hash%'), 'no pin hashes in export');
+do $$ begin
+  perform public.export_backup('wrong');
+  raise exception 'ASSERTION FAILED: wrong key exported';
+exception when invalid_authorization_specification then null; end $$;
+do $$ begin
+  perform * from private.backup_keys;
+  raise exception 'ASSERTION FAILED: key table readable';
+exception when insufficient_privilege then null; end $$;
+reset role;

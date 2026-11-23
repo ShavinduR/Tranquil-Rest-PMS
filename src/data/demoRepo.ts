@@ -381,6 +381,14 @@ export const createDemoRepo = (): Repo => {
       throw new Error('Demo mode always uses PIN 1234');
     },
 
+    async rotateBackupKey() {
+      requireAdmin();
+      throw new Error('Backups need a live Supabase project (not available in demo mode)');
+    },
+    async backupKeyStatus() {
+      return null;
+    },
+
     subscribe(cb) {
       listeners.add(cb);
       const onStorage = (e: StorageEvent) => {

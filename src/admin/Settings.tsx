@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Save, Plus, KeyRound } from 'lucide-react';
+import { Save, Plus, KeyRound, CloudUpload, Copy, ExternalLink } from 'lucide-react';
 import { repo, isDemo } from '../data';
 import { useAppData } from '../data/AppData';
 import type { AddonPreset, PricingRule, Profile, Room, RoomCategory } from '../types';
@@ -67,6 +67,7 @@ export const SettingsPage = () => {
       </Card>
 
       <StaffCard onToast={setToast} />
+      <BackupCard onToast={setToast} />
     </div>
   );
 };
@@ -198,6 +199,57 @@ const StaffCard = ({ onToast }: { onToast: (m: string) => void }) => {
           </div>
         ))}
       </div>
+    </Card>
+  );
+};
+
+const BACKUP_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1It4FV6SPDzEBHr4Tb-_5XZ-Pu2I7FvDdx8YtZ6B9jTY/edit';
+const BACKUP_FOLDER_URL = 'https://drive.google.com/drive/folders/10Iczo9m-yxF-JSbMkItAyUuvGQS5I9eM';
+
+/** Nightly backups run from a Google Apps Script in the backup sheet; this card issues its read-only key. */
+const BackupCard = ({ onToast }: { onToast: (m: string) => void }) => {
+  const [status, setStatus] = useState<{ created_at: string; last_used: string | null } | null>(null);
+  const [key, setKey] = useState<string | null>(null);
+  const load = () => void repo.backupKeyStatus().then(setStatus).catch(() => undefined);
+  useEffect(load, []);
+
+  const rotate = async () => {
+    if (status && !confirm('Create a new backup key? The old key stops working until you paste the new one into the backup sheet.')) return;
+    try {
+      setKey(await repo.rotateBackupKey());
+      load();
+    } catch (e) {
+      onToast(e instanceof Error ? e.message : 'Could not create key');
+    }
+  };
+
+  const stale = status?.last_used && Date.now() - new Date(status.last_used).getTime() > 36 * 3600_000;
+  return (
+    <Card title="Google backups">
+      <p className="mb-3 text-sm text-slate-500">
+        Every night the backup sheet copies all bookings, payments, expenses and the audit log, and saves a full JSON file into the Drive folder.
+        The key below is read-only: it cannot change any data.
+      </p>
+      <div className="mb-3 flex flex-wrap gap-2 text-sm">
+        <a className="inline-flex items-center gap-1 text-teal-800 underline" href={BACKUP_SHEET_URL} target="_blank" rel="noreferrer">Backup sheet <ExternalLink className="size-3" /></a>
+        <a className="inline-flex items-center gap-1 text-teal-800 underline" href={BACKUP_FOLDER_URL} target="_blank" rel="noreferrer">Drive folder <ExternalLink className="size-3" /></a>
+      </div>
+      <p className={cx('mb-3 text-sm', stale ? 'font-semibold text-red-700' : 'text-slate-700')}>
+        {!status ? 'No backup key yet.' : status.last_used
+          ? `Last backup: ${new Date(status.last_used).toLocaleString('en-GB', { timeZone: 'Asia/Colombo' })}${stale ? ' – more than a day ago, check the Backup Log tab.' : ''}`
+          : 'Key created, but no backup has run yet.'}
+      </p>
+      {key && (
+        <div className="mb-3 rounded-xl border-2 border-amber-300 bg-amber-50 p-3 text-sm">
+          <p className="mb-1 font-semibold">Copy this key now — it is shown only once:</p>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 break-all rounded bg-white px-2 py-1">{key}</code>
+            <Btn onClick={() => void navigator.clipboard.writeText(key).then(() => onToast('Copied'))}><Copy className="size-4" /></Btn>
+          </div>
+          <p className="mt-1 text-slate-600">Paste it in the backup sheet: Tranquil Rest → Set Supabase connection…</p>
+        </div>
+      )}
+      <Btn tone={status ? 'default' : 'primary'} onClick={() => void rotate()}><CloudUpload className="size-4" /> {status ? 'Replace backup key' : 'Create backup key'}</Btn>
     </Card>
   );
 };

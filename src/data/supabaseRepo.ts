@@ -221,6 +221,14 @@ export const createSupabaseRepo = (url: string, anonKey: string): Repo => {
       must(await db.rpc('set_staff_pin', { p_user_id: id, p_pin: pin }));
     },
 
+    async rotateBackupKey() {
+      return must(await db.rpc('rotate_backup_key')) as string;
+    },
+    async backupKeyStatus() {
+      const rows = must(await db.rpc('backup_key_status')) as { created_at: string; last_used: string | null }[];
+      return rows[0] ?? null;
+    },
+
     subscribe(cb) {
       let timer: ReturnType<typeof setTimeout> | undefined;
       const debounced = () => {
