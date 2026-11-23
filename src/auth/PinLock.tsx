@@ -1,0 +1,84 @@
+import { useEffect, useState } from 'react';
+import { Delete, Lock } from 'lucide-react';
+import { useAuth } from './AuthContext';
+import { si } from '../i18n/si';
+import { isDemo } from '../data';
+import { cx } from '../components/ui';
+
+const MAX_ATTEMPTS = 5;
+const LOCKOUT_MS = 30_000;
+
+/** Large 3×4 keypad; auto-submits on the 4th digit. */
+export const PinLock = () => {
+  const { unlock, state } = useAuth();
+  const [pin, setPin] = useState('');
+  const [message, setMessage] = useState<string | null>(null);
+  const [attempts, setAttempts] = useState(0);
+  const [blockedUntil, setBlockedUntil] = useState(0);
+  const [checking, setChecking] = useState(false);
+  const blocked = Date.now() < blockedUntil;
+
+  useEffect(() => {
+    if (!blocked) return;
+    const t = setTimeout(() => { setBlockedUntil(0); setMessage(null); }, blockedUntil - Date.now());
+    return () => clearTimeout(t);
+  }, [blocked, blockedUntil]);
+
+  useEffect(() => {
+    if (pin.length !== 4) return;
+    setChecking(true);
+    void unlock(pin).then((r) => {
+      setChecking(false);
+      if (r === 'ok') return;
+      setPin('');
+      if (r === 'offline_unknown') { setMessage(si.pin.offlineFirst); return; }
+      const n = attempts + 1;
+      setAttempts(n);
+      if (n >= MAX_ATTEMPTS) {
+        setAttempts(0);
+        setBlockedUntil(Date.now() + LOCKOUT_MS);
+        setMessage(si.pin.locked);
+      } else setMessage(si.pin.wrong);
+    });
+  }, [pin]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const press = (d: string) => {
+    if (blocked || checking) return;
+    setMessage(null);
+    setPin((p) => (p.length < 4 ? p + d : p));
+  };
+
+  const name = state.status === 'signed_in' ? state.profile.display_name : '';
+
+  return (
+    <div className="si flex min-h-dvh flex-col items-center justify-center bg-teal-800 p-6 text-white">
+      <Lock className="size-14" aria-hidden />
+      <h1 className="mt-3 text-center text-2xl font-bold">{si.pin.title}</h1>
+      {name && <p className="text-lg opacity-80">{name}</p>}
+      {isDemo && <p className="mt-1 rounded-lg bg-white/15 px-3 text-base">Demo PIN: 1234</p>}
+
+      <div className="my-6 flex gap-4" aria-live="polite" aria-label={`${pin.length} / 4`}>
+        {[0, 1, 2, 3].map((i) => (
+          <span key={i} className={cx('size-6 rounded-full border-4 border-white', i < pin.length && 'bg-white')} />
+        ))}
+      </div>
+      <p role="alert" className="mb-4 min-h-8 text-center text-xl font-bold text-yellow-300">{message}</p>
+
+      <div className="grid w-full max-w-xs grid-cols-3 gap-4">
+        {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((d) => (
+          <Key key={d} onClick={() => press(d)} disabled={blocked}>{d}</Key>
+        ))}
+        <Key onClick={() => setPin('')} disabled={blocked} small>{si.pin.clear}</Key>
+        <Key onClick={() => press('0')} disabled={blocked}>0</Key>
+        <Key onClick={() => setPin((p) => p.slice(0, -1))} disabled={blocked} label="Backspace"><Delete className="mx-auto size-9" /></Key>
+      </div>
+    </div>
+  );
+};
+
+const Key = ({ children, onClick, disabled, small, label }: { children: React.ReactNode; onClick: () => void; disabled?: boolean; small?: boolean; label?: string }) => (
+  <button type="button" onClick={onClick} disabled={disabled} aria-label={label}
+    className={cx('aspect-square rounded-full bg-white/15 font-bold shadow-inner transition-transform active:scale-95 active:bg-white/30 disabled:opacity-40', small ? 'text-lg' : 'text-4xl')}>
+    {children}
+  </button>
+);
