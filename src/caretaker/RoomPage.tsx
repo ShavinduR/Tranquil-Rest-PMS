@@ -6,7 +6,7 @@ import { repo } from '../data';
 import { useNow } from '../hooks/useNow';
 import { roomView } from '../lib/roomStatus';
 import { dateTimeSi, si, timeSi } from '../i18n/si';
-import { formatLkPhone } from '../lib/phone';
+import { formatPhone as formatLkPhone } from '../lib/phone';
 import { BigButton, ErrorNote, Spinner, cx } from '../components/ui';
 
 const tone = { available: 'bg-green-600', occupied: 'bg-red-600', booked_today: 'bg-orange-500', cleaning: 'bg-blue-600' } as const;
@@ -50,7 +50,7 @@ export const RoomPage = () => {
       <div className={cx('si rounded-3xl p-5 text-white shadow-lg', tone[view.state])}>
         <h1 className="text-4xl font-extrabold">{room.name_si}</h1>
         <p className="mt-1 text-2xl font-bold">{si.status[view.state]}</p>
-        {room.category === 'ac' && <p className="text-lg">AC</p>}
+        {room.category === 'ac' && <p className="text-lg">ඒසී</p>}
       </div>
 
       <ErrorNote>{error}</ErrorNote>

@@ -17,11 +17,11 @@ export const CaretakerLayout = () => {
     <div className="mx-auto min-h-dvh max-w-2xl bg-slate-100">
       {(!online || stale) && <OfflineBanner lastSync={lastSync} />}
       <header className="si flex items-center gap-2 bg-teal-700 px-3 py-2 text-white">
-        <button type="button" onClick={() => navigate('/caretaker')} className="flex flex-1 items-center gap-2 text-left">
+        <button type="button" onClick={() => navigate('/caretaker')} className="flex min-w-0 flex-1 items-center gap-2 text-left">
           <img src="/logo-white.svg" alt="" className="h-11 w-auto shrink-0" />
           <span className="min-w-0">
-          <div className="text-xl font-extrabold whitespace-nowrap">{reference?.settings.property_name ?? si.appName}</div>
-          <div className="text-sm whitespace-nowrap opacity-85">{fullDateSi(now)}</div>
+          <div className="truncate text-xl font-extrabold">{reference?.settings.property_name ?? si.appName}</div>
+          <div className="truncate text-sm opacity-85">{fullDateSi(now)}</div>
           </span>
         </button>
         {profile.role === 'admin' && (

@@ -28,6 +28,7 @@ Choose *Caretaker device* (PIN `1234`) or *Owner / Admin login*. Any email works
    - `supabase/migrations/20261123000004_restore_backup.sql`
    - `supabase/migrations/20261123000005_audit_staff.sql`
    - `supabase/migrations/20261123000006_new_accounts_inactive.sql`
+   - `supabase/migrations/20261123000007_production_hardening.sql`
    - `supabase/seed.sql` (5 Non-AC rooms, default prices, food presets)
 
    Or with the Supabase CLI: `supabase link` then `supabase db push`.
@@ -56,6 +57,16 @@ Choose *Caretaker device* (PIN `1234`) or *Owner / Admin login*. Any email works
    From then on the caretaker only uses the PIN. The app re-locks on every launch and after 10 idle minutes.
 
 8. **Turn on nightly Google backups** (Sheet + Drive): see [`backup/README.md`](backup/README.md). Restoring is done from *Admin → Restore*, or with `npm run restore` (same README).
+
+## Upgrading a live database
+
+Each new migration file is written to run safely on a database that already has the earlier ones and real data.
+Paste **only the new file(s)** into *SQL Editor* and press *Run* (it runs as one transaction).
+`npm run test:sql` proves this every time: it builds a database at the previous migration, fills it with live-like
+bookings, payments, food and staff, applies the newest migration, and checks that nothing was lost.
+
+The app also works with a database that is one migration behind (it falls back to the older behaviour where it can),
+so the order in which you deploy the app and run the SQL does not matter.
 
 ## Managing staff accounts
 

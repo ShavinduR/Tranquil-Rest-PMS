@@ -2,7 +2,7 @@
 
 | What | Where |
 |---|---|
-| Readable copy (Bookings, Payments, Food & Drinks, Expenses, Monthly, Settings, Audit tabs) | [Backup sheet](https://docs.google.com/spreadsheets/d/1It4FV6SPDzEBHr4Tb-_5XZ-Pu2I7FvDdx8YtZ6B9jTY/edit) |
+| Readable copy (Bookings, Payments, Refunds, Food & Drinks, Expenses, Monthly, Settings, Audit tabs) | [Backup sheet](https://docs.google.com/spreadsheets/d/1It4FV6SPDzEBHr4Tb-_5XZ-Pu2I7FvDdx8YtZ6B9jTY/edit) |
 | Complete JSON snapshot, one file per night, in a subfolder per month | [Drive folder "Tranquil Rest PMS"](https://drive.google.com/drive/folders/10Iczo9m-yxF-JSbMkItAyUuvGQS5I9eM) |
 
 ## How it works
@@ -24,6 +24,11 @@ Supabase: export_backup() checks the SHA-256 of the key, returns every table as 
 - **Failures.** A failed run writes a red FAILED row to *Backup Log* and e-mails the Google account that installed the script.
   The Settings card turns red if the last successful backup is more than 36 hours old.
 - **No Google keys or service accounts.** Apps Script uses the owner's own Google account.
+
+## Updating the script
+
+After migration 0007, paste the latest `Code.gs` into the sheet's Apps Script editor again to get the Refunds tab and
+refund-aware Monthly totals. The old script keeps working until you do (it just ignores refunds).
 
 ## Setup
 

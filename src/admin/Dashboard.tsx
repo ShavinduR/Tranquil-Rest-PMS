@@ -17,7 +17,7 @@ export const Dashboard = () => {
   const { reference } = useAppData();
   const { data, error } = useMonthData(month);
   const summary = useMemo(
-    () => (data && reference ? summarizeMonth(month, data.bookings, data.payments, data.expenses, reference.rooms) : null),
+    () => (data && reference ? summarizeMonth(month, data.bookings, data.payments, data.expenses, reference.rooms, data.refunds) : null),
     [data, reference, month],
   );
 
@@ -63,6 +63,7 @@ const DashboardBody = ({ s, data, rooms, month }: { s: MonthSummary; data: Month
         <hr className="my-2" />
         <Row label="Collected – Cash" value={lkr(s.collected.cash)} />
         <Row label="Collected – Bank" value={lkr(s.collected.bank)} />
+        {s.refunded.total > 0 && <Row label="Refunded (already deducted)" value={`− ${lkr(s.refunded.total)}`} />}
         <Row label="Total collected" value={lkr(s.collected.total)} strong />
         <Row label="Still to collect" value={lkr(s.pendingBalances)} />
       </Card>
@@ -186,7 +187,8 @@ const roomName = (rooms: Room[], id: string) => rooms.find((r) => r.id === id)?.
 const exportSummary = (s: MonthSummary) => {
   const rows: (string | number)[][] = [
     ['Month', s.month],
-    ['Collected – Cash', s.collected.cash], ['Collected – Bank', s.collected.bank], ['Collected – Total', s.collected.total],
+    ['Collected – Cash (net of refunds)', s.collected.cash], ['Collected – Bank (net of refunds)', s.collected.bank], ['Collected – Total', s.collected.total],
+    ['Refunded – Cash', s.refunded.cash], ['Refunded – Bank', s.refunded.bank],
     ['Billed – Rooms', s.billed.rooms], ['Billed – Food & beverage', s.billed.addons], ['Billed – Total', s.billed.total],
     ['Pending balances', s.pendingBalances],
     ['Expenses – Fixed', s.expenses.fixed], ['Expenses – Variable', s.expenses.variable], ['Expenses – Total', s.expenses.total],
@@ -207,12 +209,16 @@ const exportBookings = (month: string, d: MonthData, rooms: Room[]) =>
   ));
 
 const exportPayments = (month: string, d: MonthData, rooms: Room[]) => {
-  const byId = new Map(d.bookings.map((b) => [b.id, b]));
+  // Refunds are listed as negative amounts so the column sums to net money collected.
+  const rows = [
+    ...d.payments.map((p) => ({ at: p.paid_at, kind: p.kind, method: p.method, amount: p.amount, booking_id: p.booking_id })),
+    ...d.refunds.map((r) => ({ at: r.refunded_at, kind: 'refund', method: r.method, amount: -r.amount, booking_id: r.booking_id })),
+  ].sort((a, b) => a.at.localeCompare(b.at));
   downloadCsv(`tranquil-rest-payments-${month}.csv`, toCsv(
-    ['Paid at', 'Kind', 'Method', 'Amount', 'Room', 'Guest phone'],
-    [...d.payments].sort((a, b) => a.paid_at.localeCompare(b.paid_at)).map((p) => {
-      const b = byId.get(p.booking_id);
-      return [fmtDateTime(p.paid_at), p.kind, p.method, p.amount, b ? roomName(rooms, b.room_id) : '', b?.guest_phone ?? ''];
+    ['Paid at', 'Kind', 'Method', 'Amount', 'Room', 'Guest phone', 'Stay check-in'],
+    rows.map((p) => {
+      const b = d.byId.get(p.booking_id);
+      return [fmtDateTime(p.at), p.kind, p.method, p.amount, b ? roomName(rooms, b.room_id) : '', b?.guest_phone ?? '', b ? fmtDateTime(b.check_in_time) : ''];
     }),
   ));
 };

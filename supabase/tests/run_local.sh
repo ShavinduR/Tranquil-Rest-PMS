@@ -22,6 +22,19 @@ else
 fi
 $PSQL -d pms -o /dev/null -f "$HERE/tests.sql"
 $PSQL -d pms -o /dev/null -f "$HERE/tests_restore.sql"
+$PSQL -d pms -o /dev/null -f "$HERE/tests_hardening.sql"
+# Upgrade check: an existing database at the previous migration, with live-like data,
+# must take the newest migration without losing anything.
+$PSQL -c "create database pms_upgrade"
+$PSQL -d pms_upgrade -f "$HERE/auth_stub.sql"
+MIGRATIONS=("$ROOT"/migrations/*.sql)
+LAST="${MIGRATIONS[-1]}"
+for f in "${MIGRATIONS[@]}"; do [ "$f" = "$LAST" ] || $PSQL -d pms_upgrade -f "$f"; done
+$PSQL -d pms_upgrade -f "$ROOT/seed.sql"
+$PSQL -d pms_upgrade -o /dev/null -f "$HERE/upgrade_fixtures.sql"
+$PSQL -d pms_upgrade -1 -f "$LAST"            # one transaction, as in the SQL editor
+$PSQL -d pms_upgrade -o /dev/null -f "$HERE/upgrade_checks.sql"
+echo "UPGRADE TO $(basename "$LAST") OK (existing data preserved)"
 echo "ALL SQL TESTS PASSED"
 if [ -n "${DUMP_EXPORT:-}" ]; then
   $PSQL -d pms -At > "$DUMP_EXPORT" <<'SQL'

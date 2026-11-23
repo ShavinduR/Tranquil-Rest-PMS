@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Save, Pencil, Clock, Phone } from 'lucide-react';
+import { ArrowLeft, Save, Pencil, Clock, Phone, Utensils, ChevronUp } from 'lucide-react';
 import { useAppData } from '../data/AppData';
 import { repo } from '../data';
-import { NetworkError, SlotTakenError } from '../data/repo';
+import { BookingInPastError, NetworkError, SlotTakenError } from '../data/repo';
 import { BOOKING_TYPES, type Booking, type BookingType, type PaymentMethod, type SlotIssue } from '../types';
-import { defaultSlot, findRule } from '../lib/pricing';
+import { defaultSlot, findRule, startsTooEarly } from '../lib/pricing';
 import { findSlotIssues, hasOverlap } from '../lib/conflicts';
 import { addDaysKey, addMinutes, dateKey, toLocalInput, fromLocalInput } from '../lib/time';
-import { formatLkPhone, normalizeLkPhone } from '../lib/phone';
+import { parsePhone } from '../lib/phone';
 import { rupeesSi } from '../lib/money';
 import { dateTimeSi, fullDateSi, si, timeSi, daySi } from '../i18n/si';
 import { BigButton, Choice, Dialog, ErrorNote, Section, Spinner, cx } from '../components/ui';
@@ -43,6 +43,10 @@ export const BookingForm = () => {
   const [confirmBuffer, setConfirmBuffer] = useState(false);
   const [saved, setSaved] = useState<Booking | null>(null);
   const [anchorNow] = useState(() => new Date());
+  const [showAddons, setShowAddons] = useState(false);
+  const [confirmPrice, setConfirmPrice] = useState(false);
+  // Opened from "availability by date": start Short Time / Full Day at that free time.
+  const startParam = search.get('start');
 
   const rooms = useMemo(() => (reference?.rooms ?? []).filter((r) => r.active), [reference]);
   const room = rooms.find((r) => r.id === roomId) ?? null;
@@ -51,12 +55,25 @@ export const BookingForm = () => {
 
   const slot = useMemo(() => {
     if (!rule) return null;
-    const base = mode === 'walk_in' ? defaultSlot(rule, { mode, now: anchorNow }) : defaultSlot(rule, { mode, date });
+    const base = mode === 'walk_in'
+      ? defaultSlot(rule, { mode, now: anchorNow })
+      : defaultSlot(rule, { mode, date, now: anchorNow, startClock: rule.duration_minutes && startParam ? startParam : undefined });
     const start = addMinutes(base.start, startShift);
     let end = addMinutes(base.end, endShift + startShift * (rule.duration_minutes ? 1 : 0));
     if (end <= start) end = addMinutes(start, 30);
-    return { start, end };
-  }, [rule, mode, anchorNow, date, startShift, endShift]);
+    return { start, end, available: base.available };
+  }, [rule, mode, anchorNow, date, startShift, endShift, startParam]);
+
+  // Booking types that make no sense right now (e.g. "Day" at 16:30) are disabled.
+  const typeAvailable = (t: BookingType): boolean => {
+    const r = reference ? findRule(reference.pricing, category, t) : undefined;
+    if (!r) return false;
+    return (mode === 'walk_in' ? defaultSlot(r, { mode, now: anchorNow }) : defaultSlot(r, { mode, date, now: anchorNow })).available;
+  };
+  useEffect(() => {
+    if (type && !typeAvailable(type)) setType(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [date, type]);
 
   // Reset manual adjustments whenever the preset or date changes.
   useEffect(() => {
@@ -90,18 +107,19 @@ export const BookingForm = () => {
   };
 
   // Returning guest: fill in the name from their last stay.
-  const normalizedPhone = normalizeLkPhone(phone);
+  const parsedPhone = parsePhone(phone);
+  const storedPhone = parsedPhone?.stored ?? null;
   useEffect(() => {
-    if (!normalizedPhone || name) return;
+    if (!storedPhone || name) return;
     let cancelled = false;
-    void repo.findGuestName(`0${normalizedPhone.slice(2)}`).then((n) => {
+    void repo.findGuestName(storedPhone).then((n) => {
       if (!cancelled && n) setName((cur) => cur || n);
     }).catch(() => undefined);
     return () => {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [normalizedPhone]);
+  }, [storedPhone]);
 
   if (!reference) return <Spinner />;
   if (saved && room) return <BookingSaved booking={saved} room={room} settings={reference.settings} />;
@@ -113,11 +131,16 @@ export const BookingForm = () => {
   const roomIssues = room ? issuesFor(room.id) : [];
   const blocked = hasOverlap(roomIssues);
   const phoneTouched = phone.replace(/\D/g, '').length >= 9;
+  const tooEarly = slot ? startsTooEarly(slot.start, new Date(), mode) : false;
 
   const save = async (acceptBuffer = false) => {
     setError(null);
-    if (!type || !room || !slot || !normalizedPhone) {
+    if (!type || !room || !slot || !storedPhone) {
       setError(si.form.missing);
+      return;
+    }
+    if (startsTooEarly(slot.start, new Date(), mode)) {
+      setError(si.form.pastStart);
       return;
     }
     if (blocked) {
@@ -134,7 +157,7 @@ export const BookingForm = () => {
         room_id: room.id,
         booking_type: type,
         guest_name: name.trim() || null,
-        guest_phone: `0${normalizedPhone.slice(2)}`,
+        guest_phone: storedPhone,
         check_in_time: slot.start.toISOString(),
         check_out_time: slot.end.toISOString(),
         room_charge: roomCharge,
@@ -147,6 +170,7 @@ export const BookingForm = () => {
       void refresh();
     } catch (e) {
       if (e instanceof SlotTakenError) setError(si.conflictError);
+      else if (e instanceof BookingInPastError) setError(si.pastError);
       else if (e instanceof NetworkError) setError(si.networkError);
       else setError(si.error);
       void refresh();
@@ -197,15 +221,20 @@ export const BookingForm = () => {
         <div className="grid grid-cols-2 gap-2">
           {BOOKING_TYPES.map((t) => {
             const r = findRule(reference.pricing, category, t);
+            const open = typeAvailable(t);
             return (
-              <Choice key={t} selected={type === t} onClick={() => setType(t)} className="text-center">
+              <Choice key={t} selected={type === t} disabled={!open} onClick={() => setType(t)} className="text-center">
                 <span className="block text-xl font-bold">{si.bookingType[t]}</span>
                 <span className="tabular block text-lg text-slate-600">{r ? rupeesSi(r.price) : '-'}</span>
                 <span className="block text-sm text-slate-500">{r ? ruleHint(r) : ''}</span>
+                {!open && <span className="mt-1 block rounded-lg bg-slate-200 text-sm font-bold text-slate-700">{si.form.closedToday}</span>}
               </Choice>
             );
           })}
         </div>
+        {BOOKING_TYPES.some((t) => !typeAvailable(t)) && (
+          <p className="si mt-3 rounded-2xl bg-amber-50 p-3 text-base font-semibold text-amber-900">{si.form.closedHint}</p>
+        )}
       </Section>
 
       {slot && (
@@ -222,6 +251,7 @@ export const BookingForm = () => {
             onMinus={() => setEndShift((v) => shiftLimit(v - 30))}
             onPlus={() => setEndShift((v) => shiftLimit(v + 30))}
           />
+          {tooEarly && <p role="alert" className="si mt-2 rounded-2xl bg-red-50 p-3 text-lg font-semibold text-red-800">{si.form.pastStart}</p>}
           <details className="si mt-2 text-slate-600">
             <summary className="cursor-pointer py-2 text-base">{si.actions.edit} (දිනය / වේලාව)</summary>
             <div className="grid grid-cols-1 gap-2">
@@ -251,7 +281,7 @@ export const BookingForm = () => {
                   className={cx('text-center', taken && 'bg-slate-200 line-through decoration-2')}
                 >
                   <span className="block text-2xl font-extrabold">{r.name_si}</span>
-                  {r.category === 'ac' && <span className="block text-sm font-bold text-blue-700">AC</span>}
+                  {r.category === 'ac' && <span className="block text-sm font-bold text-blue-700">ඒසී</span>}
                   {taken && <span className="block text-base font-bold text-red-700 no-underline">{si.form.taken}</span>}
                   {tight && <span className="block text-sm font-bold text-orange-700">{si.form.bufferWarn}</span>}
                 </Choice>
@@ -281,12 +311,13 @@ export const BookingForm = () => {
               autoComplete="off"
               placeholder={si.form.phoneHint}
               value={phone}
-              onChange={(e) => setPhone(e.target.value.replace(/[^\d+ ]/g, '').slice(0, 16))}
+              onChange={(e) => setPhone(e.target.value.replace(/[^\d+ ]/g, '').slice(0, 22))}
               className="tabular min-h-16 w-full bg-transparent px-3 text-2xl font-bold tracking-wide outline-none"
             />
           </div>
-          {phoneTouched && !normalizedPhone && <p className="si mt-2 text-lg font-semibold text-red-700">{si.form.phoneInvalid}</p>}
-          {normalizedPhone && <p className="si mt-2 text-lg font-semibold text-green-700">✓ {formatLkPhone(phone)}</p>}
+          {!phoneTouched && <p className="si mt-2 text-base text-slate-500">{si.form.phoneForeign}</p>}
+          {phoneTouched && !parsedPhone && <p className="si mt-2 text-lg font-semibold text-red-700">{si.form.phoneInvalid}</p>}
+          {parsedPhone && <p className="si mt-2 text-lg font-semibold text-green-700">✓ {parsedPhone.display}</p>}
           <label className="si mt-3 block">
             <span className="mb-1 block text-lg font-semibold text-slate-700">{si.form.name}</span>
             <input
@@ -299,17 +330,39 @@ export const BookingForm = () => {
       )}
 
       {slot && room && (
+        // Folded by default: most bookings have no food, and older staff scroll less.
         <Section title={si.form.addons} step={mode === 'future' ? 6 : 5}>
-          <AddonPicker presets={reference.presets} lines={cart} onChange={setCart} />
+          {cart.length > 0 && !showAddons && (
+            <ul className="si mb-3 space-y-1 text-lg">
+              {cart.map((l) => (
+                <li key={l.key} className="flex justify-between rounded-xl bg-teal-50 px-3 py-2">
+                  <span>{l.label} × {l.quantity}</span>
+                  <span className="tabular font-bold">{rupeesSi(l.unit_price * l.quantity)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {showAddons ? (
+            <>
+              <AddonPicker presets={reference.presets} lines={cart} onChange={setCart} />
+              <BigButton tone="neutral" className="mt-3" icon={<ChevronUp className="size-6" aria-hidden />} onClick={() => setShowAddons(false)}>
+                {si.form.hideAddons}
+              </BigButton>
+            </>
+          ) : (
+            <BigButton tone="neutral" icon={<Utensils className="size-6 text-orange-600" aria-hidden />} onClick={() => setShowAddons(true)}>
+              {si.form.showAddons}
+            </BigButton>
+          )}
         </Section>
       )}
 
       {slot && room && (
         <Section title={si.form.advance} step={mode === 'future' ? 7 : 6}>
           <div className="mb-3 rounded-2xl bg-slate-50 p-3">
-            <SummaryRow label={si.form.price} value={rupeesSi(roomCharge)} />
+            <SummaryRow label={priceOverride !== null ? si.form.priceChanged : si.form.price} value={rupeesSi(roomCharge)} />
             {!editingPrice ? (
-              <button type="button" className="si flex items-center gap-2 py-1 text-base font-semibold text-teal-800 underline" onClick={() => setEditingPrice(true)}>
+              <button type="button" className="si flex items-center gap-2 py-1 text-base font-semibold text-teal-800 underline" onClick={() => setConfirmPrice(true)}>
                 <Pencil className="size-4" aria-hidden /> {si.form.editPrice}
               </button>
             ) : (
@@ -341,11 +394,21 @@ export const BookingForm = () => {
             </div>
           )}
           <BigButton size="xl" tone="green" icon={<Save className="size-8" aria-hidden />} busy={saving}
-            disabled={!canWrite || !type || !room || !normalizedPhone || blocked} onClick={() => void save()}>
+            disabled={!canWrite || !type || !room || !storedPhone || blocked || tooEarly} onClick={() => void save()}>
             {saving ? si.actions.saving : si.actions.save}
           </BigButton>
         </div>
       </div>
+
+      <Dialog open={confirmPrice} onClose={() => setConfirmPrice(false)} labelledBy="price-title">
+        <h2 id="price-title" className="si mb-3 text-2xl font-bold text-amber-800">{si.form.priceConfirmTitle}</h2>
+        <p className="si mb-4 text-lg">{si.form.priceConfirmBody}</p>
+        <SummaryRow label={si.form.price} value={rupeesSi(rule?.price ?? 0)} strong />
+        <div className="mt-5 space-y-3">
+          <BigButton tone="neutral" size="xl" onClick={() => setConfirmPrice(false)}>{si.actions.back}</BigButton>
+          <BigButton tone="orange" onClick={() => { setConfirmPrice(false); setEditingPrice(true); }}>{si.form.priceConfirmYes}</BigButton>
+        </div>
+      </Dialog>
 
       <Dialog open={confirmBuffer} onClose={() => setConfirmBuffer(false)} labelledBy="buffer-title">
         <h2 id="buffer-title" className="si mb-4 text-2xl font-bold text-orange-800">{si.form.bufferWarn}</h2>

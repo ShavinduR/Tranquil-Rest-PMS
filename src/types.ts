@@ -62,6 +62,17 @@ export type Payment = {
   created_by: string | null;
 };
 
+/** Money given back to a guest (e.g. when a booking with an advance is cancelled). */
+export type Refund = {
+  id: string;
+  booking_id: string;
+  method: PaymentMethod;
+  amount: number;
+  reason: string | null;
+  refunded_at: string;
+  created_by: string | null;
+};
+
 export type BookingAddon = {
   id: string;
   booking_id: string;
@@ -92,6 +103,8 @@ export type Booking = {
   updated_at: string;
   payments: Payment[];
   addons: BookingAddon[];
+  /** Empty on databases that predate migration 0007. */
+  refunds: Refund[];
 };
 
 export type Expense = {

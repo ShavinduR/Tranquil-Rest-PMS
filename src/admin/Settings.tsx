@@ -51,7 +51,7 @@ export const SettingsPage = () => {
       </Card>
 
       <Card title="Rooms">
-        <div className="space-y-2">
+        <div className="space-y-4 divide-y divide-slate-100 sm:space-y-2 sm:divide-y-0 [&>*]:pt-3 sm:[&>*]:pt-0">
           {reference.rooms.map((r) => <RoomRow key={r.id + JSON.stringify(r)} room={r} onSave={(p) => guard(() => repo.updateRoom(r.id, p))} />)}
         </div>
       </Card>
@@ -95,17 +95,17 @@ const PricingRow = ({ rule, onSave }: { rule: PricingRule; onSave: (p: Partial<P
   const [hours, setHours] = useState(String((rule.duration_minutes ?? 0) / 60));
   const dirty = price !== String(rule.price) || (windowed ? start !== rule.default_start_time?.slice(0, 5) || end !== rule.default_end_time?.slice(0, 5) : hours !== String((rule.duration_minutes ?? 0) / 60));
   return (
-    <div className="mb-2 grid grid-cols-[7rem_1fr_1fr_auto] items-center gap-2 text-sm">
+    <div className="mb-3 grid grid-cols-[6rem_1fr_auto] items-center gap-2 text-sm sm:mb-2 sm:grid-cols-[7rem_1fr_1fr_auto]">
       <span className="font-medium">{TYPE_EN[rule.booking_type]}</span>
       <input aria-label="Price" className={inputCls} type="number" min={0} value={price} onChange={(e) => setPrice(e.target.value)} />
       {windowed ? (
-        <div className="flex items-center gap-1">
+        <div className="col-span-3 row-start-2 flex items-center gap-1 sm:col-span-1 sm:row-start-auto">
           <input aria-label="Start" className={inputCls} type="time" value={start} onChange={(e) => setStart(e.target.value)} />
           <span>–</span>
           <input aria-label="End" className={inputCls} type="time" value={end} onChange={(e) => setEnd(e.target.value)} />
         </div>
       ) : (
-        <div className="flex items-center gap-1">
+        <div className="col-span-3 row-start-2 flex items-center gap-1 sm:col-span-1 sm:row-start-auto">
           <input aria-label="Hours" className={inputCls} type="number" min={0.5} step={0.5} value={hours} onChange={(e) => setHours(e.target.value)} /><span>hrs</span>
         </div>
       )}
@@ -123,7 +123,7 @@ const RoomRow = ({ room, onSave }: { room: Room; onSave: (p: Partial<Room>) => P
   const [f, setF] = useState({ name: room.name, name_si: room.name_si, category: room.category, active: room.active });
   const dirty = JSON.stringify(f) !== JSON.stringify({ name: room.name, name_si: room.name_si, category: room.category, active: room.active });
   return (
-    <div className="grid grid-cols-2 items-center gap-2 text-sm md:grid-cols-[1fr_1fr_10rem_6rem_auto]">
+    <div className="grid grid-cols-1 items-center sm:grid-cols-2 gap-2 text-sm md:grid-cols-[1fr_1fr_10rem_6rem_auto]">
       <input aria-label="Name (English)" className={inputCls} value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />
       <input aria-label="Name (Sinhala)" className={cx(inputCls, 'si')} value={f.name_si} onChange={(e) => setF({ ...f, name_si: e.target.value })} />
       <select aria-label="Category" className={inputCls} value={f.category} onChange={(e) => setF({ ...f, category: e.target.value as RoomCategory })}>
@@ -140,7 +140,7 @@ const PresetRow = ({ preset, onSave }: { preset: AddonPreset; onSave: (p: AddonP
   const isNew = !preset.id;
   const dirty = JSON.stringify(f) !== JSON.stringify(preset);
   return (
-    <div className={cx('grid grid-cols-2 items-center gap-2 text-sm md:grid-cols-[1fr_1fr_8rem_6rem_auto]', isNew && 'border-t border-dashed border-slate-300 pt-3')}>
+    <div className={cx('grid grid-cols-1 items-center sm:grid-cols-2 gap-2 text-sm md:grid-cols-[1fr_1fr_8rem_6rem_auto]', isNew && 'border-t border-dashed border-slate-300 pt-3')}>
       <input aria-label="Sinhala label" placeholder="සිංහල නම" className={cx(inputCls, 'si')} value={f.label_si} onChange={(e) => setF({ ...f, label_si: e.target.value })} />
       <input aria-label="English label" placeholder="English name" className={inputCls} value={f.label_en} onChange={(e) => setF({ ...f, label_en: e.target.value })} />
       <input aria-label="Price" type="number" min={0} className={inputCls} value={f.price} onChange={(e) => setF({ ...f, price: Number(e.target.value) })} />
@@ -181,9 +181,9 @@ const StaffCard = ({ onToast }: { onToast: (m: string) => void }) => {
         Untick <b>Active</b> to lock someone out: their phone signs out within about 2 minutes and cannot load any data. Their past records are kept.
         {isDemo && ' (Demo: PIN is always 1234.)'}
       </p>
-      <div className="space-y-2">
+      <div className="space-y-4 divide-y divide-slate-100 sm:space-y-2 sm:divide-y-0 [&>*]:pt-3 sm:[&>*]:pt-0">
         {staff.map((s) => (
-          <div key={s.id} className={cx('grid grid-cols-2 items-center gap-2 text-sm md:grid-cols-[1fr_9rem_6rem_10rem_auto]', !s.active && 'opacity-60')}>
+          <div key={s.id} className={cx('grid grid-cols-1 items-center sm:grid-cols-2 gap-2 text-sm md:grid-cols-[1fr_9rem_6rem_10rem_auto]', !s.active && 'opacity-60')}>
             <input aria-label="Display name" className={inputCls} defaultValue={s.display_name}
               onBlur={(e) => e.target.value !== s.display_name && void repo.updateStaff(s.id, { display_name: e.target.value }).then(load)} />
             <select aria-label="Role" className={inputCls} value={s.role} onChange={(e) => void repo.updateStaff(s.id, { role: e.target.value as Profile['role'] }).then(load)}>

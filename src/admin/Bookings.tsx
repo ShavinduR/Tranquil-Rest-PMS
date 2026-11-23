@@ -6,7 +6,7 @@ import { SlotTakenError } from '../data/repo';
 import { BOOKING_TYPES, type Booking, type BookingStatus } from '../types';
 import { balanceDue, bookingTotal, paidTotal } from '../lib/booking';
 import { lkr } from '../lib/money';
-import { formatLkPhone, normalizeLkPhone } from '../lib/phone';
+import { formatPhone as formatLkPhone, parsePhone } from '../lib/phone';
 import { fromLocalInput, monthKey, toLocalInput } from '../lib/time';
 import { Dialog, Spinner, cx } from '../components/ui';
 import { Btn, Card, MonthPicker, PageHeader, STATUS_EN, TYPE_EN, fmtDateTime, inputCls, useMonthData } from './common';
@@ -54,7 +54,31 @@ export const AdminBookings = () => {
           </select>
         </div>
         {!data ? <Spinner /> : rows.length === 0 ? <p className="py-6 text-center text-slate-500">No bookings.</p> : (
-          <div className="-mx-4 overflow-x-auto">
+          <>
+          {/* Phones: one card per booking instead of a wide table. */}
+          <ul className="space-y-2 md:hidden">
+            {rows.map((b) => (
+              <li key={b.id}>
+                <button type="button" onClick={() => setEditing(b)}
+                  className={cx('w-full rounded-xl border border-slate-200 p-3 text-left text-sm active:bg-slate-50', b.status === 'cancelled' && 'text-slate-400')}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <div className="font-semibold">{roomName(b.room_id)} · {TYPE_EN[b.booking_type]}</div>
+                      <div className="text-xs text-slate-500">{fmtDateTime(b.check_in_time)} → {fmtDateTime(b.check_out_time)}</div>
+                    </div>
+                    <span className={cx('shrink-0 rounded-full px-2 py-0.5 text-xs font-medium', statusCls[b.status])}>{STATUS_EN[b.status]}</span>
+                  </div>
+                  <div className="mt-1 text-slate-700">{b.guest_name ?? '–'} · {formatLkPhone(b.guest_phone)}</div>
+                  <div className="tabular mt-1 flex flex-wrap gap-x-3 text-xs">
+                    <span>Total {lkr(bookingTotal(b))}</span>
+                    <span>Paid {lkr(paidTotal(b))}</span>
+                    {b.status !== 'cancelled' && balanceDue(b) > 0 && <span className="font-semibold text-amber-700">Due {lkr(balanceDue(b))}</span>}
+                  </div>
+                </button>
+              </li>
+            ))}
+          </ul>
+          <div className="-mx-4 hidden overflow-x-auto md:block">
             <table className="w-full min-w-[760px] text-sm">
               <thead className="text-left text-xs text-slate-500 uppercase">
                 <tr>
@@ -84,6 +108,7 @@ export const AdminBookings = () => {
               </tbody>
             </table>
           </div>
+          </>
         )}
       </Card>
       {editing && reference && (
@@ -124,14 +149,14 @@ const EditBooking = ({ booking, rooms, onClose, onSaved }: {
   };
 
   const save = () => act(async () => {
-    const phone = normalizeLkPhone(f.guest_phone);
-    if (!phone) throw new Error('Invalid phone number');
+    const phone = parsePhone(f.guest_phone);
+    if (!phone) throw new Error('Invalid phone number (foreign numbers must start with +)');
     const start = fromLocalInput(f.check_in);
     const end = fromLocalInput(f.check_out);
     if (end <= start) throw new Error('Check-out must be after check-in');
     await repo.updateBooking(booking.id, {
       guest_name: f.guest_name.trim() || null,
-      guest_phone: `0${phone.slice(2)}`,
+      guest_phone: phone.stored,
       room_id: f.room_id,
       booking_type: f.booking_type,
       check_in_time: start.toISOString(),
@@ -149,8 +174,8 @@ const EditBooking = ({ booking, rooms, onClose, onSaved }: {
         <h2 id="edit-title" className="text-xl font-bold">Edit booking</h2>
         <button type="button" onClick={onClose} aria-label="Close" className="rounded-lg p-2 hover:bg-slate-100"><X className="size-5" /></button>
       </div>
-      <div className="grid grid-cols-2 gap-3 text-sm">
-        <label className="col-span-2">Guest name<input className={inputCls} value={f.guest_name} onChange={set('guest_name')} /></label>
+      <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+        <label className="sm:col-span-2">Guest name<input className={inputCls} value={f.guest_name} onChange={set('guest_name')} /></label>
         <label>Phone<input className={inputCls} value={f.guest_phone} onChange={set('guest_phone')} /></label>
         <label>Room
           <select className={inputCls} value={f.room_id} onChange={set('room_id')}>{rooms.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}</select>
@@ -161,7 +186,7 @@ const EditBooking = ({ booking, rooms, onClose, onSaved }: {
         <label>Room charge (LKR)<input className={inputCls} type="number" min="0" value={f.room_charge} onChange={set('room_charge')} /></label>
         <label>Check-in<input className={inputCls} type="datetime-local" value={f.check_in} onChange={set('check_in')} /></label>
         <label>Check-out<input className={inputCls} type="datetime-local" value={f.check_out} onChange={set('check_out')} /></label>
-        <label className="col-span-2">Notes<input className={inputCls} value={f.notes} onChange={set('notes')} /></label>
+        <label className="sm:col-span-2">Notes<input className={inputCls} value={f.notes} onChange={set('notes')} /></label>
       </div>
 
       <h3 className="mt-4 mb-1 text-sm font-semibold text-slate-700">Payments</h3>
@@ -172,6 +197,16 @@ const EditBooking = ({ booking, rooms, onClose, onSaved }: {
           <span className="flex items-center gap-1"><b className="tabular">{lkr(p.amount)}</b>
             <button type="button" aria-label="Delete payment" className="rounded p-1 text-slate-400 hover:text-red-600"
               onClick={() => confirm('Delete this payment? (audited)') && void act(() => repo.deletePayment(p.id))}><Trash2 className="size-4" /></button>
+          </span>
+        </div>
+      ))}
+      {booking.refunds.length > 0 && <h3 className="mt-3 mb-1 text-sm font-semibold text-slate-700">Refunds</h3>}
+      {booking.refunds.map((r) => (
+        <div key={r.id} className="flex items-center justify-between border-t border-slate-100 py-1 text-sm">
+          <span>{fmtDateTime(r.refunded_at)} · {r.method}{r.reason ? ` · ${r.reason}` : ''}</span>
+          <span className="flex items-center gap-1"><b className="tabular text-red-700">− {lkr(r.amount)}</b>
+            <button type="button" aria-label="Delete refund" className="rounded p-1 text-slate-400 hover:text-red-600"
+              onClick={() => confirm('Delete this refund record? (audited)') && void act(() => repo.deleteRefund(r.id))}><Trash2 className="size-4" /></button>
           </span>
         </div>
       ))}

@@ -6,8 +6,12 @@ import { isDemo } from '../data';
 import { BigButton, Dialog, cx } from '../components/ui';
 import { useNavigate } from 'react-router-dom';
 
-const MAX_ATTEMPTS = 5;
-const LOCKOUT_MS = 30_000;
+/** The server decides when to lock; this only remembers the lock across reloads. */
+const BLOCKED_KEY = 'tr-pin-blocked-until';
+/** The server locks on the 5th wrong PIN but can only report it on the next try, so show it straight away. */
+const STREAK_KEY = 'tr-pin-wrong-streak';
+const SERVER_MAX_WRONG = 5;
+const FIRST_LOCK_SECONDS = 60;
 
 /** Large 3×4 keypad; auto-submits on the 4th digit. */
 export const PinLock = () => {
@@ -16,15 +20,20 @@ export const PinLock = () => {
   const [confirmOut, setConfirmOut] = useState(false);
   const [pin, setPin] = useState('');
   const [message, setMessage] = useState<string | null>(null);
-  const [attempts, setAttempts] = useState(0);
-  const [blockedUntil, setBlockedUntil] = useState(0);
+  const [blockedUntil, setBlockedUntil] = useState(() => Number(localStorage.getItem(BLOCKED_KEY) ?? 0));
   const [checking, setChecking] = useState(false);
-  const blocked = Date.now() < blockedUntil;
+  const [tick, setTick] = useState(Date.now());
+  const blocked = tick < blockedUntil;
+  const secondsLeft = Math.max(0, Math.ceil((blockedUntil - tick) / 1000));
 
+  // Live countdown while locked.
   useEffect(() => {
-    if (!blocked) return;
-    const t = setTimeout(() => { setBlockedUntil(0); setMessage(null); }, blockedUntil - Date.now());
-    return () => clearTimeout(t);
+    if (!blocked) {
+      if (blockedUntil) { localStorage.removeItem(BLOCKED_KEY); setBlockedUntil(0); setMessage(null); }
+      return;
+    }
+    const t = setInterval(() => setTick(Date.now()), 1000);
+    return () => clearInterval(t);
   }, [blocked, blockedUntil]);
 
   useEffect(() => {
@@ -32,16 +41,24 @@ export const PinLock = () => {
     setChecking(true);
     void unlock(pin).then((r) => {
       setChecking(false);
-      if (r === 'ok') return;
+      if (r === 'ok') { localStorage.removeItem(STREAK_KEY); return; }
       setPin('');
       if (r === 'offline_unknown') { setMessage(si.pin.offlineFirst); return; }
-      const n = attempts + 1;
-      setAttempts(n);
-      if (n >= MAX_ATTEMPTS) {
-        setAttempts(0);
-        setBlockedUntil(Date.now() + LOCKOUT_MS);
-        setMessage(si.pin.locked);
-      } else setMessage(si.pin.wrong);
+      const lockFor = (seconds: number) => {
+        const until = Date.now() + seconds * 1000;
+        localStorage.setItem(BLOCKED_KEY, String(until));
+        setTick(Date.now());
+        setBlockedUntil(until);
+        setMessage(null);
+        localStorage.removeItem(STREAK_KEY);
+      };
+      if (typeof r === 'object') { lockFor(r.lockedFor); return; }
+      if (r === 'wrong') {
+        const streak = Number(localStorage.getItem(STREAK_KEY) ?? 0) + 1;
+        if (streak >= SERVER_MAX_WRONG) { lockFor(FIRST_LOCK_SECONDS); return; }
+        localStorage.setItem(STREAK_KEY, String(streak));
+      }
+      setMessage(si.pin.wrong);
     });
   }, [pin]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -58,14 +75,16 @@ export const PinLock = () => {
       <img src="/logo-white.svg" alt="Tranquil Rest" className="h-24 w-auto" />
       <h1 className="mt-3 text-center text-2xl font-bold">{si.pin.title}</h1>
       {name && <p className="text-lg opacity-80">{name}</p>}
-      {isDemo && <p className="mt-1 rounded-lg bg-white/15 px-3 text-base">Demo PIN: 1234</p>}
+      {isDemo && <p className="mt-1 rounded-lg bg-white/15 px-3 text-base">{si.pin.demo}</p>}
 
       <div className="my-6 flex gap-4" aria-live="polite" aria-label={`${pin.length} / 4`}>
         {[0, 1, 2, 3].map((i) => (
           <span key={i} className={cx('size-6 rounded-full border-4 border-white', i < pin.length && 'bg-white')} />
         ))}
       </div>
-      <p role="alert" className="mb-4 min-h-8 text-center text-xl font-bold text-yellow-300">{message}</p>
+      <p role="alert" className="mb-4 min-h-8 text-center text-xl font-bold text-yellow-300">
+        {blocked ? si.pin.lockedFor(secondsLeft) : message}
+      </p>
 
       <div className="grid w-full max-w-xs grid-cols-3 gap-4">
         {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((d) => (
@@ -73,18 +92,17 @@ export const PinLock = () => {
         ))}
         <Key onClick={() => setPin('')} disabled={blocked} small>{si.pin.clear}</Key>
         <Key onClick={() => press('0')} disabled={blocked}>0</Key>
-        <Key onClick={() => setPin((p) => p.slice(0, -1))} disabled={blocked} label="Backspace"><Delete className="mx-auto size-9" /></Key>
+        <Key onClick={() => setPin((p) => p.slice(0, -1))} disabled={blocked} label="මකන්න"><Delete className="mx-auto size-9" /></Key>
       </div>
 
       {/* Deliberately small and two-step: signing out needs the owner to sign the phone in again. */}
       <button type="button" onClick={() => setConfirmOut(true)} className="mt-10 text-sm text-white/70 underline underline-offset-4">
-        {si.pin.signOut} · Sign out this device
+        {si.pin.signOut}
       </button>
       <Dialog open={confirmOut} onClose={() => setConfirmOut(false)} labelledBy="signout-title">
         <div className="si text-slate-900">
           <h2 id="signout-title" className="text-2xl font-bold">{si.pin.signOutTitle}</h2>
           <p className="mt-2 text-lg">{si.pin.signOutBody}</p>
-          <p className="mt-1 text-sm text-slate-500">The owner's email and password will be needed to sign this phone in again.</p>
           <div className="mt-5 space-y-3">
             <BigButton tone="neutral" size="xl" onClick={() => setConfirmOut(false)}>{si.pin.signOutCancel}</BigButton>
             <BigButton tone="red" onClick={() => void signOut().then(() => navigate('/', { replace: true }))}>{si.pin.signOutConfirm}</BigButton>
